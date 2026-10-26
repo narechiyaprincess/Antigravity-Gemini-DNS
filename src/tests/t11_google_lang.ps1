@@ -20,12 +20,12 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'
 
 Write-Host "--- Executing Tier 11: all of Google and English Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 60) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
@@ -54,12 +54,12 @@ function Get-SystemAnswers([string]$Domain, [string]$Type = 'A') {
     $idx = [array]::IndexOf(@(Get-Hosts $script:Targets), $Domain); if ($idx -lt 0) { return @() }
     return @('179.254.166.' + (174 + $idx))
 }
-# The real Test-HostsConflict reads %WINDIR%\System32\drivers\etc\hosts: point WINDIR at a scratch copy for the hosts tests only.
+# Pass a scratch hosts file explicitly; production resolves its default from SystemDirectory.
 $script:FakeWin = Join-Path $ScratchPath 'win'
 [IO.Directory]::CreateDirectory((Join-Path $script:FakeWin 'System32\drivers\etc')) | Out-Null
 function Set-HostsLines([string[]]$Lines) { [IO.File]::WriteAllLines((Join-Path $script:FakeWin 'System32\drivers\etc\hosts'), [string[]]@($Lines)) }
 Set-HostsLines @('127.0.0.1 localhost')
-function Test-HostsConflict($Scope = $null) { $w = $env:WINDIR; try { $env:WINDIR = $script:FakeWin; & $script:RealHostsConflict $Scope } finally { $env:WINDIR = $w } }
+function Test-HostsConflict($Scope = $null) { & $script:RealHostsConflict $Scope (Join-Path $script:FakeWin 'System32\drivers\etc\hosts') }
 # AUDIT: no hosts file means no hosts conflict (some "cleaners" delete the file); the status must not crash on it
 Remove-Item -LiteralPath (Join-Path $script:FakeWin 'System32\drivers\etc\hosts') -Force -ErrorAction SilentlyContinue
 Assert-Condition ((Test-HostsConflict) -eq $false) 'T11_H01' 'A missing hosts file is no conflict (it used to end the status and the connect with a raw "Cannot find path")' 'R-AUDIT'
@@ -121,10 +121,10 @@ $res = Invoke-Enable $all
 Assert-Condition ($res -like 'NRPT_CONFLICT*' -and (Same-Set @((Read-StateSafe).Targets) $core)) 'T11_G07' 'A hosts entry for a name under a Google suffix is a conflict for all of Google' 'R-GOOGLE' -FailureMessage $res
 
 # ==============================================================================
-# G08: the exe knows the scope; the elevated copy gets only the --google flag
+# G08: the exe knows the scope; the elevated copy gets only the --gemini / --browser / --no-core flags
 # ==============================================================================
 $prog = Get-Src 'Program.cs'
-Assert-Condition ($prog -match '\(Google\?" --google":""\)' -and $prog -match 'TargetsForGoogle\(\)' -and $prog -notmatch '"--targets"') 'T11_G08a' 'Program.cs: all of Google comes from the catalog (TargetsForGoogle) and the elevated copy gets only --google' 'R-GOOGLE'
+Assert-Condition ($prog -match '\(Google\?" --browser":""\)' -and $prog -match 'TargetsOf\(Core,Gemini,Google\)' -and $prog -notmatch '"--targets"') 'T11_G08a' 'Program.cs: all of Google comes from the catalog (TargetsForGoogle) and the elevated copy gets only --google' 'R-GOOGLE'
 if ($haveExe) {
     $pl = Invoke-Exe @('--profiles-list', '--google'); $j0 = $null; try { $j0 = $pl.Out | ConvertFrom-Json } catch {}
     Assert-Condition ($pl.Exit -eq 0 -and $j0 -and (Same-Set @($j0.Targets) $all) -and (Same-Set @($j0.GoogleTargets) $goo)) 'T11_G08b' 'The exe with --google lists the hosts and the suffixes as its scope' 'R-GOOGLE' -FailureMessage $pl.Out

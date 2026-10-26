@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -8,15 +8,22 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // The browsers installed here, one per row: the program's own icon, the name and a radio mark. The last row is always "Другой / не знаю".
  internal sealed class BrowserList:Surface {
   public sealed class Item{public string Id,Name;public Bitmap Icon;}
   public readonly List<Item> Items=new List<Item>();int sel=-1,hot=-1;
-  public event EventHandler SelectedChanged;   // raised by the person's click only
+  public event EventHandler SelectedChanged;   // raised by the user's click only
   [Browsable(false),DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]public int SelectedIndex{get=>sel;set{if(value<-1||value>=Items.Count)return;sel=value;Invalidate();}}
   public string SelectedId=>sel>=0&&sel<Items.Count?Items[sel].Id:null;
-  public BrowserList(){Cursor=Cursors.Hand;Font=Theme.F(9.5f);}
+  public BrowserList(){Cursor=Cursors.Hand;Font=Theme.F(9.5f);AccessibleRole=AccessibleRole.List;AccessibleName=L.En?"Browser":"Браузер";}
+  protected override bool IsInputKey(Keys key)=>key==Keys.Up||key==Keys.Down||key==Keys.Home||key==Keys.End||base.IsInputKey(key);
+  protected override void OnKeyDown(KeyEventArgs e){
+   if(Enabled&&Items.Count>0&&(e.KeyCode==Keys.Up||e.KeyCode==Keys.Down||e.KeyCode==Keys.Home||e.KeyCode==Keys.End)){
+    int next=e.KeyCode==Keys.Home?0:e.KeyCode==Keys.End?Items.Count-1:Math.Clamp(sel+(e.KeyCode==Keys.Up?-1:1),0,Items.Count-1);
+    if(next!=sel){sel=next;Invalidate();SelectedChanged?.Invoke(this,EventArgs.Empty);}e.Handled=true;
+   }base.OnKeyDown(e);
+  }
   protected override void Dispose(bool disposing){if(disposing){foreach(var it in Items)it.Icon?.Dispose();Items.Clear();}base.Dispose(disposing);}
   float RowH=>Items.Count==0?Height:Height/(float)Items.Count;
   int At(int y)=>Items.Count==0?-1:Math.Max(0,Math.Min(Items.Count-1,(int)(y/RowH)));
@@ -41,6 +48,7 @@ namespace AgDns {
     using(var pen=new Pen(on?Theme.AccentHover:Theme.Muted,1.5f*k))g.DrawEllipse(pen,rx-rr,ry-rr,rr*2,rr*2);
     if(on)using(var b=new SolidBrush(Theme.AccentHover))g.FillEllipse(b,rx-rr/2f,ry-rr/2f,rr,rr);
    }
+   if(Focused&&ShowFocusCues)Theme.FocusRing(g,this,10);
   }
  }
 
@@ -62,21 +70,22 @@ namespace AgDns {
  public sealed partial class MainForm {
   RoundPanel browserPanel;Label browserTitle,browserNote;BrowserList browserList;VerdictLine verdictLine;Func<string> verdictFn;
   readonly PillButton browserOpen=new PillButton(),browserRecheck=new PillButton(),browserBack=new PillButton(),browserContinue=new PillButton();
-  List<BrowserInfo> browsers=new List<BrowserInfo>();BrowserInfo browserInfo;BrowserVerdict browserVerdict;
+  List<BrowserInfo> browsers=new List<BrowserInfo>();BrowserInfo browserInfo;
   System.Threading.Tasks.TaskCompletionSource<bool> browserTcs;bool browserForScope,browserWarned;int browserSerial;Task browserWork=Task.CompletedTask;
   internal IBrowserEnv BrowserEnv=new LiveBrowserEnv();                 // test seam: where the browser check reads from
   internal Action<BrowserInfo> BrowserLauncher;                         // test seam: null = start the browser's program with its settings address
   internal Func<bool> BrowserElevated;                                  // test seam: null = ask Windows
   internal Func<string,Bitmap> IconSource;                              // test seam: where the list gets a program's icon (null = Windows; none in a render run)
   internal Action<string> BrowserClipboard;                             // test seam: null = the real clipboard
-  const int BrowserRowH=30,BrowserMaxShown=5;
+  const int BrowserRowH=32,BrowserMaxShown=5;
 
   // Top to bottom: «Назад», the question, the verdict (one sentence), the list, the button to the browser's own settings (only when it bypasses the bridge),
   // the note about the reconnect (only in the «+ Браузер» question with a working bridge), and at the bottom «Проверить снова» and «Продолжить» / «Готово».
   const int BackY=12,BackH=28,TitleY=52,VerdictY=80,VerdictH=36,ListY=126,BottomH=34;
   void BuildBrowserPanel(){
-   int pw=W-28,iw=pw-36;
-   browserPanel=new RoundPanel{Visible=false,Fill=Theme.Card,Radius=18};browserPanel.Bounds=new Rectangle(14,10,pw,PageBottom-20);Controls.Add(browserPanel);
+   int pw=W-28,iw=pw-44;
+   browserPanel=new RoundPanel{Visible=false,Fill=Theme.Card,Radius=16};browserPanel.Bounds=new Rectangle(14,10,pw,PageBottom-20);Controls.Add(browserPanel);
+   browserPanel.HandleCreated+=(_,__)=>{try{SetWindowTheme(browserPanel.Handle,"DarkMode_Explorer",null);}catch{}};
    browserBack.Glyph="\uE72B";browserBack.Font=Theme.F(9f,true);
    Btn(browserPanel,browserBack,L.T("Назад"),new Rectangle(18,BackY,94,BackH),Theme.Soft,()=>CloseBrowserPanel(false));
    browserTitle=MakeLabel(L.T("Какой браузер для Gemini и Google?"),Theme.Text,Theme.F(11.5f,true),new Rectangle(18,TitleY,iw,22));browserPanel.Controls.Add(browserTitle);
@@ -94,13 +103,40 @@ namespace AgDns {
   // The list's height depends on how many browsers there are: the settings button and the note follow it.
   void LayoutBrowserPanel(){
    float s=LayoutScale;int R(int v)=>(int)Math.Round(v*s);
-   browserList.Bounds=new Rectangle(R(18),R(ListY),R(W-28-36),(int)Math.Round(browserList.Items.Count*BrowserRowH*s));
+   var scroll=browserPanel.AutoScrollPosition;
+   browserList.Bounds=new Rectangle(R(18)+scroll.X,R(ListY)+scroll.Y,R(W-28-44),(int)Math.Round(browserList.Items.Count*BrowserRowH*s));
    browserOpen.Top=browserList.Bottom+R(8);
    browserNote.Top=(browserOpen.Visible?browserOpen.Bottom:browserList.Bottom)+R(8);
+   int footer=Math.Max(R(PageBottom-20-BottomH-6)+scroll.Y,browserNote.Bottom+R(10));
+   browserRecheck.Top=browserContinue.Top=footer;
+   browserPanel.AutoScrollMinSize=new Size(0,footer-scroll.Y+R(BottomH+12));
+   int contentWidth=browserPanel.ClientSize.Width-R(36);
+   browserList.Width=browserOpen.Width=browserNote.Width=Math.Max(1,contentWidth);
+   browserContinue.Left=browserRecheck.Right+R(8);browserContinue.Width=Math.Max(R(80),contentWidth-browserRecheck.Width-R(8));
   }
 
-  // «+ Браузер»: ask which browser first. true = continue with the scope, false = the person backed out.
-  Task<bool> AskBrowserAsync(){browserTcs=new TaskCompletionSource<bool>();ShowBrowserPanel(true);return browserTcs.Task;}
+  // «+ Браузер»: ask which browser first. true = continue with the scope, false = the user backed out.
+  async Task<bool> AskBrowserAsync(){
+   var ready=new TaskCompletionSource<bool>();browserWork=ready.Task;
+   try{
+   int tabAtStart=nav.Selected;
+   string chosen=settings.Browser;var env=BrowserEnv;
+   if(chosen==BrowserCatalog.OtherId)return true; // the user already chose the explicit unknown-browser option
+   if(!string.IsNullOrEmpty(chosen)){
+    bool follows=await OffUi(()=>{
+     var saved=BrowserCatalog.Detect(env).FirstOrDefault(b=>b.Id==chosen);
+     return saved!=null&&BrowserCatalog.Evaluate(saved,env).Status==BypassStatus.Follows;
+    });
+    if(IsDisposed||exiting||nav.Selected!=tabAtStart)return false;
+    if(follows&&settings.Browser==chosen)return true;
+   }
+   // Missing/unconfirmed/bypassing browsers need a useful decision; simply viewing
+   // Settings never gets here. An unchanged verified choice does not open a picker.
+   var decision=new TaskCompletionSource<bool>();browserTcs=decision;ShowBrowserPanel(true);
+   _=browserWork.ContinueWith(t=>{_=t.Exception;ready.TrySetResult(true);},System.Threading.CancellationToken.None,TaskContinuationOptions.ExecuteSynchronously,TaskScheduler.Default);
+   return await decision.Task;
+   }finally{ready.TrySetResult(true);}
+  }
   void ShowBrowserPanel(bool forScope){
    if(detailsPanel!=null)detailsPanel.Visible=false;if(customPanel!=null)customPanel.Visible=false;
    browserForScope=forScope;browserWarned=forScope&&needsRestore&&isActive;
@@ -110,12 +146,12 @@ namespace AgDns {
    browserPanel.Bounds=new Rectangle((int)Math.Round(14*sc),(int)Math.Round(10*sc),(int)Math.Round((W-28)*sc),(int)Math.Round((PageBottom-20)*sc));
    LayoutBrowserPanel();
    if(!browserOpen.IsHandleCreated)_=browserOpen.Handle;   // the settings button appears later: its window is created here, on this thread, while nothing else is going on
-   browserPanel.Visible=true;browserPanel.BringToFront();
+   browserPanel.AutoScrollPosition=Point.Empty;browserPanel.Visible=true;browserPanel.BringToFront();FitServiceViewport();
    browserWork=LoadBrowsersAsync();
   }
   void CloseBrowserPanel(bool ok){
    if(browserPanel==null||!browserPanel.Visible&&browserTcs==null)return;
-   if(ok&&browserForScope&&browserList.SelectedId!=null&&settings.Browser!=browserList.SelectedId){settings.Browser=browserList.SelectedId;if(!smoke)settings.Save();UpdateBrowserRow();}
+   if(ok&&browserForScope&&browserList.SelectedId!=null&&settings.Browser!=browserList.SelectedId){settings.Browser=browserList.SelectedId;if(!smoke)SaveSettings();UpdateBrowserRow();}
    browserPanel.Visible=false;browserSerial++;
    var t=browserTcs;browserTcs=null;t?.TrySetResult(ok);
   }
@@ -159,12 +195,12 @@ namespace AgDns {
   }
   async Task EvaluateBrowserAsync(){
    int serial=++browserSerial;int i=browserList.SelectedIndex;
-   if(i<0){browserInfo=null;browserVerdict=null;Verdict(Theme.Muted,()=>L.T("Выберите браузер — проверю, обходит ли он мост"));browserOpen.Visible=false;LayoutBrowserPanel();UpdateBrowserButtons();return;}
+   if(i<0){browserInfo=null;Verdict(Theme.Muted,()=>L.T("Выберите браузер — проверю, обходит ли он мост"));browserOpen.Visible=false;LayoutBrowserPanel();UpdateBrowserButtons();return;}
    var item=browserList.Items[i];var info=browsers.FirstOrDefault(b=>b.Id==item.Id);var env=BrowserEnv;
-   if(!browserForScope&&settings.Browser!=item.Id){settings.Browser=item.Id;if(!smoke)settings.Save();UpdateBrowserRow();}   // in the «+ Браузер» question the choice is kept when the person continues
+   if(!browserForScope&&settings.Browser!=item.Id){settings.Browser=item.Id;if(!smoke)SaveSettings();UpdateBrowserRow();}   // in the «+ Браузер» question the choice is kept when the user continues
    var v=info==null?new BrowserVerdict{Status=BypassStatus.Unknown,Code="OTHER"}:await OffUi(()=>BrowserCatalog.Evaluate(info,env));
    if(serial!=browserSerial||IsDisposed||!browserPanel.Visible)return;
-   browserInfo=info;browserVerdict=v;
+   browserInfo=info;
    Log("Браузер для Google: "+item.Name+" — "+v.Status+" ("+v.Code+")");
    ShowBrowserVerdict(info,v);UpdateBrowserButtons();
   }
@@ -190,9 +226,21 @@ namespace AgDns {
    }
   }
   void UpdateBrowserButtons(){browserContinue.Enabled=browserList.SelectedIndex>=0;browserRecheck.Enabled=true;}
-  void UpdateBrowserRow(){browserRow.Subtitle=string.IsNullOrEmpty(settings.Browser)?L.T("Не выбран: нажмите, чтобы выбрать"):BrowserCatalog.NameOf(settings.Browser)+" · "+L.T("проверить снова");}
+  string serviceBrowserIdentity;
+  Bitmap serviceBrowserIcon;
+  void UpdateBrowserRow(){
+   browserRow.Subtitle=string.IsNullOrEmpty(settings.Browser)?L.T("Не выбран"):BrowserCatalog.NameOf(settings.Browser);
+   scopeSel.Items=ScopeItems();
+   if(serviceBrowserIdentity==settings.Browser)return;
+   serviceBrowserIdentity=settings.Browser;serviceBrowserIcon?.Dispose();serviceBrowserIcon=null;scopeSel.BrowserIcon=null;
+   try{
+    var chosen=BrowserCatalog.Detect(BrowserEnv).FirstOrDefault(b=>b.Id==settings.Browser);
+    if(chosen!=null&&!smoke)serviceBrowserIcon=IconSource!=null?IconSource(chosen.Exe):BrowserCatalog.IconOf(chosen.Exe);
+   }catch{}
+   scopeSel.BrowserIcon=serviceBrowserIcon;scopeSel.Invalidate();
+  }
 
-  // The only thing the program starts here: the browser's own program with its settings address, when the person presses the button.
+  // The only thing the program starts here: the browser's own program with its settings address, when the user presses the button.
   void OpenBrowserSettings(){
    var info=browserInfo;if(info==null||!BrowserCatalog.CanOpenSettings(info,BrowserEnv))return;
    Log("Открываю настройку браузера: "+info.Name);
@@ -228,14 +276,42 @@ namespace AgDns {
   internal void SmokeBrowserPanel(string id,bool forScope) {
    known=true;detailsPanel.Visible=false;nav.Selected=TabBridge;ShowBrowserPanel(forScope);PumpBrowser();
    if(id!=null){SelectBrowserForTest(id);PumpBrowser();}
-   Application.DoEvents();
+   PumpBrowserMessages();
   }
-  void PumpBrowser(){var sw=Stopwatch.StartNew();while(!browserWork.IsCompleted&&sw.ElapsedMilliseconds<5000){Application.DoEvents();System.Threading.Thread.Sleep(5);}Application.DoEvents();}
+  void PumpBrowser(){
+   var sw=Stopwatch.StartNew();
+   while(!browserWork.IsCompleted&&sw.ElapsedMilliseconds<5000){PumpBrowserMessages();System.Threading.Thread.Sleep(5);}
+   if(!browserWork.IsCompleted)throw new TimeoutException("Browser smoke work did not finish within five seconds");
+   browserWork.GetAwaiter().GetResult();
+   PumpBrowserMessages();
+  }
+  // Smoke only: DoEvents can block inside WinForms GetMessage after its PeekMessage check.
+  // Remove messages nonblocking and bound each slice so the task deadline remains effective.
+  [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+  struct BrowserSmokeMessage {public IntPtr Window;public uint Id;public UIntPtr WParam;public IntPtr LParam;public uint Time;public int X,Y;public uint Private;}
+  [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="PeekMessageW")]
+  static extern bool PeekBrowserSmokeMessage(out BrowserSmokeMessage message,IntPtr window,uint min,uint max,uint remove);
+  [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="TranslateMessage")]
+  static extern bool TranslateBrowserSmokeMessage(ref BrowserSmokeMessage message);
+  [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="DispatchMessageW")]
+  static extern IntPtr DispatchBrowserSmokeMessage(ref BrowserSmokeMessage message);
+  [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="PostQuitMessage")]
+  static extern void PostBrowserSmokeQuit(int code);
+  internal static void PumpBrowserMessages(){
+   var sw=Stopwatch.StartNew();
+   for(int count=0;count<128&&sw.ElapsedMilliseconds<10;count++){
+    if(!PeekBrowserSmokeMessage(out var message,IntPtr.Zero,0,0,1))return;
+    if(message.Id==0x0012){PostBrowserSmokeQuit(unchecked((int)message.WParam.ToUInt64()));throw new InvalidOperationException("Browser smoke received WM_QUIT");}
+    TranslateBrowserSmokeMessage(ref message);DispatchBrowserSmokeMessage(ref message);
+   }
+  }
 
-  // ---- seams for the self-test and the smoke renders ----
+  // seams for the self-test and the smoke renders
   internal bool BrowserPanelVisible=>browserPanel.Visible;
   internal Bitmap[] BrowserListIcons=>browserList.Items.Select(i=>i.Icon).Where(b=>b!=null).ToArray();
   internal int BrowserPanelHeight=>browserPanel.Height;
+  internal int BrowserContentHeight=>Math.Max(browserPanel.ClientSize.Height,browserPanel.AutoScrollMinSize.Height);
+  internal bool BrowserFooterReachableForTest(){browserPanel.ScrollControlIntoView(browserContinue);Application.DoEvents();var r=browserPanel.RectangleToClient(browserContinue.RectangleToScreen(browserContinue.ClientRectangle));bool fits=r.Top>=0&&r.Bottom<=browserPanel.ClientSize.Height;browserPanel.AutoScrollPosition=Point.Empty;return fits;}
   internal Rectangle[] BrowserLayout()=>new[]{browserList.Bounds,verdictLine.Bounds,browserOpen.Bounds,browserRecheck.Bounds,browserContinue.Bounds,browserBack.Bounds,browserTitle.Bounds,browserNote.Bounds};
   internal Task BrowserWork=>browserWork;
   internal string[] BrowserNames=>browserList.Items.Select(i=>i.Name).ToArray();

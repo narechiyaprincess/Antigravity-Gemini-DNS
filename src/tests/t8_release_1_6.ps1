@@ -20,12 +20,12 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 Write-Host "--- Executing Tier 8: Release 1.6 Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 120) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
@@ -79,7 +79,7 @@ if ($haveExe) {
     $j = $r.Json
     Assert-Condition ($j -and $j.Source -eq 'found' -and (Join-Set $j.Servers) -eq '212.109.195.91' -and $j.BootstrapCalls -eq 1 -and @($j.PreflightAsked).Count -eq 2) 'T8_A02' 'Dead pins and dead saved addresses -> the provider name is bootstrapped' 'R16-1' -FailureMessage $r.Raw
 
-    # A03: an entry older than 30 days is ignored (not even tested); the bootstrap decides, so a failing bootstrap fails the connection honestly
+    # A03: an entry older than 30 days is ignored (not even tested); the bootstrap decides, so a failing bootstrap fails the connection
     $r = Invoke-Synthetic '--connect-synthetic' (New-Connect 31 $savedIps)
     $j = $r.Json
     Assert-Condition ($j -and $j.Error -eq 'BOOTSTRAP_FAILED' -and @($j.Servers).Count -eq 0 -and @($j.PreflightAsked).Count -eq 1 -and $j.BootstrapCalls -eq 1) 'T8_A03' 'A saved entry older than 30 days is ignored: only the pins are tested, the failed bootstrap ends the attempt' 'R16-1' -FailureMessage $r.Raw
@@ -102,8 +102,10 @@ if ($haveExe) {
 
 # A06: wiring in the window. The saved set of the chosen profile reaches the resolver; it is stored only after a successful connect and only for found addresses.
 $main = Get-Code 'MainForm.cs'
-Assert-Condition ($main -match 'SavedAddresses\.Find\(settings\.SavedAddrs,p\.Template\)' -and $main -match 'ResolveLiveAsync\(p\.Template,p\.Servers,token,savedAddrs\)') 'T8_A06' 'The connect flow hands the saved addresses of the selected profile to the resolver' 'R16-1'
-Assert-Condition ($main -match 'if\(plan!=null&&result\.Code==0\)\{if\(plan\.Source=="found"\)SavedAddresses\.Put\(settings\.SavedAddrs,p\.Template,servers,plan\.FoundUtc\)') 'T8_A07' 'Found addresses are saved only after the engine reported success' 'R16-1'
+$assistedMain = Get-Content -LiteralPath (Join-Path $sourceRoot "MainForm.Assisted.cs") -Raw -Encoding UTF8
+$assistedNative = Get-Content -LiteralPath (Join-Path $sourceRoot "AssistedNative.cs") -Raw -Encoding UTF8
+Assert-Condition ($assistedMain.Contains("SavedAddressSource=template=>SavedAddresses.Find(settings.SavedAddrs,template)") -and $assistedNative.Contains("SavedFor(request.Template)") -and $assistedNative.Contains("AddressResolver.ResolveAsync(request.Template,request.Servers.ToArray()") -and $assistedNative.Contains("saved:saved")) 'T8_A06' 'The actual coordinator passes exact-template saved addresses to the original resolver' 'R16-1'
+Assert-Condition ($assistedMain -match 'if\(outcome.Outcome==AssistedOutcome.NativeVerified&&assistedBackend.AddressPlan!=null\)' -and $assistedMain -match 'if\(plan.Source=="found"\)SavedAddresses.Put\(settings.SavedAddrs,p.Template,plan.Servers,plan.FoundUtc\)') 'T8_A07' 'Found addresses are saved only after current native verification' 'R16-1'
 $ui = Get-Src 'UiKit.cs'
 Assert-Condition ($ui -match 'List<SavedAddr> SavedAddrs' -and $main -match 'SourceText\(settings\.LastAddrSource,when\)') 'T8_A08' 'The saved set lives in the user settings (not in the engine journal) and its source is shown in the window (since 2026-10-13 in «Подробнее»)' 'R16-1'
 Assert-Condition ((Get-Src 'Engine.ps1') -notmatch 'SavedAddr' -and (Get-Src 'Recovery.cs') -notmatch 'SavedAddr') 'T8_A09' 'The engine journal and the recovery code know nothing about the saved addresses (schema 1 is unchanged)' 'R16-1'
@@ -127,7 +129,7 @@ if ($haveExe) {
         tlsOk = @(); dohOk = @('212.109.195.77') })
     Assert-Condition ($r.Json.Error -eq 'BOOTSTRAP_NO_ADDRESS' -and @($r.Json.Servers).Count -eq 0 -and @($r.Json.DohAsked).Count -eq 0) 'T8_B02' 'A resolver answer without valid TLS for the provider name is not taken, whoever supplied it' 'R16-2' -FailureMessage $r.Raw
 
-    # B03: a step that never answers: the search ends at the budget with an honest BOOTSTRAP_TIMEOUT (not a hang, not "no address passed")
+    # B03: a step that never answers: the search ends at the budget with BOOTSTRAP_TIMEOUT (not a hang, not "no address passed")
     $r = Invoke-Synthetic '--bootstrap-synthetic' ([ordered]@{ template = $bt; system = @('212.109.195.91'); cross = @(); tlsOk = @('212.109.195.91'); dohOk = @('212.109.195.91'); dohHang = $true; budgetMs = 800; discoveryMs = 300 }) 40
     Assert-Condition ($r.Exit -eq 0 -and $r.Json.Error -eq 'BOOTSTRAP_TIMEOUT' -and @($r.Json.Servers).Count -eq 0 -and $r.Json.ElapsedMs -lt 6000) 'T8_B03' 'A check that never completes ends the search at the budget with BOOTSTRAP_TIMEOUT and nothing is chosen' 'R16-2' -FailureMessage $r.Raw
     $r = Invoke-Synthetic '--bootstrap-synthetic' ([ordered]@{ template = $bt; system = 'hang'; cross = 'hang'; budgetMs = 800; discoveryMs = 300 }) 40
@@ -205,7 +207,7 @@ if ($haveExe) {
     $r = Invoke-Alt 'alive' @((New-Prof 'alive' 20), (New-Prof 'other' 300))
     Assert-Condition ($r.Json.Kind -eq 'Offer' -and $r.Json.ProfileId -eq 'other' -and $r.Json.Checked -eq 1) 'T8_C06' 'The profile that failed is never offered back' 'R16-3' -FailureMessage $r.Raw
 
-    # C06b: the person's answer to the trust dialog: declined -> nothing is enabled; accepted -> trust is asked first, then the profile is enabled
+    # C06b: the user's answer to the trust dialog: declined -> nothing is enabled; accepted -> trust is asked first, then the profile is enabled
     $tr = @((New-DeadProf 'current'), (New-Prof 'alive' 80))
     $r = Invoke-Synthetic '--alternative-synthetic' ([ordered]@{ attempts = 6; current = 'current'; profiles = $tr; trust = 'decline' })
     Assert-Condition ($r.Json.Kind -eq 'Offer' -and $r.Json.Applied -eq $false -and (@($r.Json.Calls) -join ',') -eq 'trust:alive') 'T8_C06b' 'Trust declined: the offer is not carried out, enable is never called' 'R16-3' -FailureMessage $r.Raw
@@ -237,12 +239,17 @@ $offerBlock = if ($oi -ge 0 -and $si -gt $oi) { $region.Substring($oi, $si - $oi
 $switchBlock = if ($si -ge 0) { $region.Substring($si) } else { '' }
 Assert-Condition ($offerBlock.Length -gt 400 -and $offerBlock -notmatch 'Elevate\(' -and $offerBlock -notmatch 'Mutate\(' -and $offerBlock -notmatch '"restore"|"enable"' -and $offerBlock -notmatch 'SetSelectedSilently|settings\.Profile' -and $offerBlock -notmatch 'Engine\(') 'T8_C10' 'The search for another provider only reads (no elevation, no engine call, no restore) and does not change the selected profile' 'R16-3' -FailureMessage ("len " + $offerBlock.Length)
 $ap = $switchBlock.IndexOf('ProviderSwitch.ApplyAsync'); $sel = $switchBlock.IndexOf('SetSelectedSilently'); $mut = $switchBlock.IndexOf('Mutate("enable")')
-Assert-Condition ($ap -ge 0 -and $switchBlock -match 'ApplyAsync\(o,id=>EnsureTrust\(profiles\[i\]\)' -and $sel -gt $ap -and $mut -gt $sel -and $switchBlock -notmatch 'Elevate\(' -and $switchBlock -notmatch '"restore"') 'T8_C11' 'A switch goes through ApplyAsync: the trust dialog first, then the profile is selected and the ordinary Mutate("enable") (compensated profile switch) runs' 'R16-3' -FailureMessage "ap=$ap sel=$sel mut=$mut"
+$trustCode = Get-Code 'ConnectionTrust.cs'
+$coordinatorCode = Get-Code 'AssistedCoordinator.cs'
+Assert-Condition ($ap -ge 0 -and $sel -gt $ap -and $mut -gt $sel -and $switchBlock -notmatch 'EnsureTrust|Elevate\(|"restore"' -and $assistedMain -match 'assisted\.RunCandidates\(requests' -and $assistedMain -match 'Permit\(preview\)&&AssistedTrust\(preview\)' -and $assistedMain -match 'ProviderConsentForm\.Confirm' -and $trustCode -match 'ProviderIdentity\(provider\)' -and $trustCode -match 'Pack=PolicyJson\.Write\(p\.Compile\.Pack\)' -and $trustCode -match 'Scopes=Sorted\(b\.AuthorizedScopes\)') 'T8_C11' 'Offered switches enter ordinary enable once; production coordinator owns consent tied to provider, pack and scope without a duplicate name-only trust prompt' 'R16-3' -FailureMessage "ap=$ap sel=$sel mut=$mut"
 $mainCode = Get-Code 'MainForm.cs'
-Assert-Condition (([regex]::Matches($mainCode, 'OfferAlternativeAsync\(p,')).Count -eq 2 -and ([regex]::Matches($mainCode, 'SwitchToOfferedAsync\(\)')).Count -eq 2 -and $mainCode -match 'ProviderSwitch\.IsTrigger\(plan\.Error\)' -and $mainCode -match 'ProviderSwitch\.IsTrigger\(CodeOfOutput\(result\.Output\)\)') 'T8_C12' 'The search starts only from the two failure paths of the person''s own connect/repair; the switch only from its button' 'R16-3'
+Assert-Condition ($assistedMain -notmatch 'OfferAlternativeAsync\(p,' -and $assistedMain -match 'ConnectionCandidates\(request\)' -and $assistedMain -match '!x\.Custom&&!x\.Experimental' -and $assistedMain -notmatch 'ProviderPool\.Usable' -and $coordinatorCode -match 'Take\(4\)' -and $coordinatorCode -match 'CancelAfter\(deadline\?\?TimeSpan\.FromMinutes\(4\)\)' -and $coordinatorCode -match 'CancelAfter\(candidateTimeout\?\?TimeSpan\.FromSeconds\(70\)\)' -and $coordinatorCode.Contains('i>0&&(authorized==null||!authorized(request))') -and $assistedMain.Contains('candidate=>Permit()&&ConnectionTrust.Covers(candidate)') -and $trustCode.Contains('Covers(AssistedRequest r)=>Has(RequestKey(r))||IsCatalogProvider(r)&&CatalogConsent') -and $coordinatorCode.Contains('last.Outcome!=AssistedOutcome.Refused||last.Changed||!ProviderSwitch.IsTrigger(FailureCode(last))') -and $coordinatorCode.Contains('Superseded(generation)||ManualOff') -and $coordinatorCode.Contains('token=mutationToken??token;token.ThrowIfCancellationRequested();') -and $mainCode.Contains('assisted.ManualOff||assisted.RecoveryPending')) 'T8_C12' 'Production connect automatically tries at most four authorized catalog candidates, ignores unscoped history, stops on cancellation or any unsafe result, and preserves native mutation deadlines' 'R16-3'
 $mh = $mainRaw.IndexOf('// ---- 1.5-1: health check in the tray'); $mh2 = $mainRaw.IndexOf('// ---- 1.5-2: support report')
 $healthRegion = if ($mh -ge 0 -and $mh2 -gt $mh) { $mainRaw.Substring($mh, $mh2 - $mh) } else { '' }
-Assert-Condition ($healthRegion.Length -gt 500 -and $healthRegion -notmatch 'OfferAlternative|ProviderSwitch|SwitchToOffered') 'T8_C13' 'The background health check never starts a search for another provider or a switch' 'R16-3'
+# v1.3 C3: the one exception is the opt-in failover. It is gated by FailoverGuard.Triggered(settings.AutoFailover, ...) and only offers: it never applies or enables anything.
+$optIn = [regex]::Match($healthRegion, 'async Task FailoverOfferAsync\(\)\{.*?\n  \}', [System.Text.RegularExpressions.RegexOptions]::Singleline).Value
+$healthOutside = $healthRegion.Replace($optIn, '')
+Assert-Condition ($healthRegion.Length -gt 500 -and $healthOutside -notmatch 'OfferAlternative|ProviderSwitch|SwitchToOffered' -and $healthRegion -match 'FailoverGuard\.Triggered\(settings\.AutoFailover' -and $optIn.Length -gt 200 -and $optIn -notmatch 'ApplyAsync|Mutate\("enable"\)|SwitchToOffered|Elevate\(') 'T8_C13' 'The background health check starts a search for another provider only through the opt-in failover (off by default), and that path only offers; nothing is applied or enabled' 'R16-3'
 $sw = Get-Code 'Switch.cs'
 $trig = [regex]::Match($sw, 'Triggers=\{([^}]*)\}').Groups[1].Value
 Assert-Condition (@([regex]::Matches($trig, '"([A-Z_]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object) -join ',' -eq 'BOOTSTRAP_NO_ADDRESS,BOOTSTRAP_TIMEOUT,DOH_NO_VALIDATED_ENDPOINT' -and $sw -match 'r\.Selectable&&!r\.Experimental' -and $sw -match '!p\.Experimental' -and $sw -notmatch 'Elevate|Engine\(|Registry|Process') 'T8_C14' 'Switch.cs: exactly the three "no usable address" codes trigger it, it uses the benchmark Selectable rule without experimental profiles, and it has no elevation or system access' 'R16-3'
@@ -254,7 +261,7 @@ $unknown = @($scan | Sort-Object -Unique | Where-Object { $knownCodes -notcontai
 Assert-Condition ($haveExe -and $unknown.Count -eq 0 -and $scan.Count -ge 5) 'T8_C15' 'Every message code literal in Switch.cs, Connect.cs and Probing.cs has a message table entry' 'R16-3' -FailureMessage ($unknown -join ', ')
 
 # ==============================================================================
-# D: quick provider check every 10 minutes (no engine, no CIM); Suspect -> Drift unchanged; the full check stays at 45 minutes
+# D: quick provider check every 10 minutes (no engine, no CIM); Suspect and Drift unchanged; the full check stays at 45 minutes
 # ==============================================================================
 $activeJournal = [ordered]@{ Schema = 1; Phase = 'Active'; Servers = @('212.109.195.91', '83.220.169.155', '10.0.0.7'); Template = 'https://x.example.test/dns-query' }
 function Invoke-Health($Journal, [string]$Provider, $Steps) { Invoke-Synthetic '--health-synthetic' ([ordered]@{ journal = $Journal; provider = $Provider; steps = @($Steps) }) }
@@ -320,8 +327,17 @@ $tickText = if ($tickIdx -ge 0 -and $tickEnd -gt $tickIdx) { $mainRaw2.Substring
 Assert-Condition ($tickText -match 'TryStart' -and $tickText -match 'busy' -and $tickText -match 'benchRunning' -and $tickText -notmatch 'Mutate\(|Elevate\(') 'T8_D10' 'The light check runs through the same guarded tick as the full one (not during an operation or the benchmark, never a repair by itself)' 'R16-4'
 
 # ==============================================================================
-# E: No unattended privileged repair or background service.
+# E: No unattended repair; the recovery broker remains optional and explicitly installed.
 # ==============================================================================
 $srcAll = ''
 foreach ($f in Get-ChildItem -LiteralPath $sourceRoot -File | Where-Object { $_.Extension -in '.cs', '.ps1' }) { $srcAll += (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8) }
-Assert-Condition ($srcAll -notmatch '--auto-repair' -and $srcAll -notmatch 'ITaskService|ServiceBase|CreateService|sc\.exe\s+create') 'T8_E02' 'No unattended repair command, scheduled task or Windows service is installed' 'R16-5'
+$brokerSource = Get-Content (Join-Path $sourceRoot 'Broker.cs') -Raw -Encoding UTF8
+$programSource = Get-Content (Join-Path $sourceRoot 'Program.cs') -Raw -Encoding UTF8
+$assistedSource = Get-Content (Join-Path $sourceRoot 'AssistedNative.cs') -Raw -Encoding UTF8
+$installCalls = @([regex]::Matches($brokerSource, '(?<![A-Za-z0-9_])Install\(\);'))
+$explicitInstall = $brokerSource -match 'if\(args.Length==1&&args\[0\]=="--broker-install"\)\{Install\(\);' -and $installCalls.Count -eq 1
+$brokerOptIn = $brokerSource -match 'if\(!args.Any\(a=>a.StartsWith\("--broker-",StringComparison.Ordinal\)\)\)return false;'
+$dispatch = $programSource.IndexOf('Broker.TryRun(args,out int brokerExit)')
+$gui = $programSource.IndexOf('Application.Run(form)')
+$assistedIndependent = $assistedSource -match 'Program\.Engine\(' -and $assistedSource -notmatch '\bBroker\.'
+Assert-Condition ($srcAll -notmatch '--auto-repair|ITaskService|sc\.exe\s+create' -and $explicitInstall -and $brokerOptIn -and $dispatch -ge 0 -and $gui -gt $dispatch -and $assistedIndependent) 'T8_E02' 'No unattended repair; broker installation requires its explicit CLI operation before GUI dispatch, while Native Assisted uses Engine independently' 'R16-5'

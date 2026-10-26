@@ -22,12 +22,12 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'
 
 Write-Host "--- Executing Tier 7: 1.4 review and Release 1.5 Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 120) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
@@ -149,7 +149,7 @@ $msg = Invoke-Enable $false
 $script:Repair = $false
 Assert-Condition ($msg -like '*NRPT_CONFLICT*' -and $script:MockWriteCount -eq $writes -and (Read-State).Phase -eq 'Active') 'T7_R06' 'Repair refuses while a foreign rule claims the domains (nothing removed)' 'R15-1' -FailureMessage $msg
 
-# R07: the repair cannot succeed (apply fails twice): honest RECOVERY_REQUIRED, no false success, no half-state
+# R07: the repair cannot succeed (apply fails twice): RECOVERY_REQUIRED, no false success, no half-state
 New-ActiveBridge 't7_r07' | Out-Null
 $script:MockRules.RemoveAt(0)
 $script:MockFailDohFrom = $script:MockDohAddCount + 1
@@ -159,9 +159,11 @@ $script:Repair = $false; $script:MockFailDohFrom = 0
 $stR = Read-State
 Assert-Condition ($msg -like 'RECOVERY_REQUIRED*' -and $stR.Phase -ne 'Active' -and $script:MockRules.Count -eq 0 -and $script:MockDoh.Count -eq 0) 'T7_R07' 'Repair that cannot re-apply ends in RECOVERY_REQUIRED with a clean journal, not in a false success' 'R15-1' -FailureMessage $msg
 
-# R08: only the user starts a repair: -Repair is passed by the exe only for the "Repair" click paths
+# R08: a repair starts from the "Repair" click paths, and by itself only through the gated self-repair (2026-10-26: administrator rights, rate limit)
 $main = Get-Src 'MainForm.cs'
-Assert-Condition ($main -match 'Mutate\("enable",true\)' -and ([regex]::Matches($main, 'Mutate\("enable",true\)')).Count -eq 2) 'T7_R08' 'Mutate("enable", repair) is called from exactly two places (the window button and the tray menu item)' 'R15-1'
+$assistedSrc = Get-Src 'MainForm.Assisted.cs'
+$selfRepair = [regex]::Match($assistedSrc, 'internal async Task<bool> AutoRepairAsync[\s\S]*?\n  \}').Value
+Assert-Condition ($main -match 'Mutate\("enable",true\)' -and ([regex]::Matches($main, 'Mutate\("enable",true\)')).Count -eq 2 -and ([regex]::Matches($assistedSrc, 'Mutate\("enable",true\)')).Count -eq 1 -and $selfRepair.Contains('Mutate("enable",true)') -and $selfRepair.Contains('if(!CanRepairSilently()||autoRepairs.Count>=3||') -and $selfRepair.Contains('TimeSpan.FromMinutes(5)') -and $selfRepair.Contains('assisted.ManualOff||assisted.RecoveryPending') -and $main.Contains('internal Func<bool> CanRepairSilently=()=>Program.IsAdmin();') -eq $false -and $assistedSrc.Contains('internal Func<bool> CanRepairSilently=()=>Program.IsAdmin();')) 'T7_R08' 'Mutate("enable", repair) is called from the window button, the tray item and only the gated self-repair (administrator rights, 5 min / 3 per hour, never after a manual off)' 'R15-1'
 
 # ==============================================================================
 # H: health check (1.5-1): read-only, no UAC, no benchmark, no automatic repair
@@ -177,7 +179,7 @@ $mi = $main.IndexOf('// ---- 1.5-1: health check in the tray'); $mj = $main.Inde
 $healthBlock = if ($mi -ge 0 -and $mj -gt $mi) { $main.Substring($mi, $mj - $mi) } else { '' }
 $ti = $healthBlock.IndexOf('async Task HealthTick'); $ai = $healthBlock.IndexOf('internal HealthReport CurrentHealth')
 $tickBlock = if ($ti -ge 0 -and $ai -gt $ti) { $healthBlock.Substring($ti, $ai - $ti) } else { '' }
-Assert-Condition ($healthBlock.Length -gt 500 -and $tickBlock.Length -gt 300 -and $tickBlock -notmatch 'Mutate\(' -and $tickBlock -notmatch 'Elevate\(' -and $tickBlock -notmatch 'Benchmark|ToggleBenchmark' -and $healthBlock -notmatch 'ToggleBenchmark|Benchmark\.') 'T7_H03' 'The window code of the health check never starts a repair, an elevation or a benchmark by itself' 'R15-1' -FailureMessage ("len " + $healthBlock.Length + "/" + $tickBlock.Length)
+Assert-Condition ($healthBlock.Length -gt 500 -and $tickBlock.Length -gt 300 -and $tickBlock -notmatch 'Mutate\(' -and $tickBlock -notmatch 'Elevate\(' -and $tickBlock -notmatch 'Benchmark|ToggleBenchmark' -and $healthBlock -notmatch 'ToggleBenchmark|Benchmark\.' -and ([regex]::Matches($healthBlock, 'AutoRepairAsync\(')).Count -eq 1 -and $healthBlock.Contains('if(r.CanFix)_=AutoRepairAsync(r);')) 'T7_H03' 'The window code of the health check never starts an elevation or a benchmark; a confirmed fixable drift only hands over to the gated self-repair' 'R15-1' -FailureMessage ("len " + $healthBlock.Length + "/" + $tickBlock.Length)
 Assert-Condition ($tickBlock -match 'busy' -and $tickBlock -match 'benchRunning' -and $tickBlock -match 'TryStart' -and $healthBlock -match 'NetworkAddressChanged' -and $healthBlock -match 'PowerModes\.Resume' -and $healthBlock -match 'HealthTrigger\.Startup') 'T7_H04' 'Triggers: startup, network change, wake-up and the periodic timer; nothing runs while an operation or the benchmark is in progress' 'R15-1'
 Assert-Condition ($main -match 'if\(hasPhase&&!needsRestore\)health=null') 'T7_H05' 'A switched-off bridge clears any drift: the automation never argues with "Disconnect"' 'R15-1'
 # a check that overlapped an operation is queued again, not dropped: the state is checked once the operation has settled
@@ -217,7 +219,7 @@ if ($haveExe) {
     $reportLines = @($st.Out -split "`n" | Where-Object { $_ -match '^PASS report' }).Count
     Assert-Condition ($st.Exit -eq 0 -and $healthLines -ge 35 -and $schedLines -ge 10 -and $reportLines -ge 18) 'T7_H11' "The exe's self-test carries the health, scheduler and report checks (health=$healthLines of which scheduler=$schedLines, report=$reportLines)" 'R15-1' -FailureMessage ($st.Out.Substring([Math]::Max(0, $st.Out.Length - 400)))
 
-    # --states renders the new states; the five default shots are produced by the plain call and are not part of --states
+    # states renders the new states; the five default shots are produced by the plain call and are not part of --states
     $shotDir = Join-Path $ScratchPath 'shots'; [IO.Directory]::CreateDirectory($shotDir) | Out-Null
     $ui = Invoke-Exe @('--ui-smoke', (Join-Path $shotDir 'smoke.png'), '--states') 300
     $needed = @('smoke_state_drift.png', 'smoke_report_preview.png', 'smoke_state_idle.png', 'smoke_details_recovery.png')
@@ -254,7 +256,7 @@ foreach ($f in Get-ChildItem -LiteralPath $sourceRoot -File | Where-Object { $_.
 Assert-Condition ($dupes.Count -eq 0) 'T7_D01' 'No server IP or DoH URL of any catalog profile is repeated outside profiles.json and the self-tests' 'R15-V' -FailureMessage ($dupes -join '; ')
 
 # ==============================================================================
-# K: hard kill on a mutation boundary (journal written, mutation done, journal not updated yet): the next restore still completes
+# K: hard kill on a mutation boundary: unique NRPT owner markers recover; pending DoH cannot prove ownership
 # ==============================================================================
 function New-KilledApply([string]$name, [bool]$RuleAdded, [bool]$DohAdded) {
     Reset-MockEnvironment (Join-Path $ScratchPath $name)
@@ -271,6 +273,15 @@ function New-KilledApply([string]$name, [bool]$RuleAdded, [bool]$DohAdded) {
 }
 foreach ($case in @(@('t7_k1', $false, $true), @('t7_k2', $true, $true), @('t7_k3', $true, $false))) {
     New-KilledApply $case[0] $case[1] $case[2]
+    $beforeRecovery = @($script:MockDoh | Sort-Object ServerAddress | Select-Object ServerAddress,DohTemplate,AutoUpgrade,AllowFallbackToUdp | ConvertTo-Json -Compress)
     $res = ''; try { Restore-State (Read-State) | Out-Null; $res = 'OK' } catch { $res = $_.Exception.Message }
-    Assert-Condition ($res -eq 'OK' -and (Read-State).Phase -eq 'Restored' -and $script:MockRules.Count -eq 0 -and $script:MockDoh.Count -eq 0) ('T7_K' + $case[0].Substring(4)) ('Killed after ' + $(if ($case[1]) { 'the NRPT rules' } else { 'the DoH records only' }) + ' (journal Applying, names not yet saved): the next restore removes exactly what was created and closes the journal') 'R15-V' -FailureMessage $res
+    if ($case[2]) {
+        $retained = @($script:MockDoh | Sort-Object ServerAddress | Select-Object ServerAddress,DohTemplate,AutoUpgrade,AllowFallbackToUdp | ConvertTo-Json -Compress)
+        Assert-Condition ($res -like '*DOH_OWNERSHIP_UNCERTAIN*' -and (Read-State).Phase -eq 'Restoring' -and $script:MockRules.Count -eq 0 -and $script:MockDoh.Count -eq $P1s.Count -and ($beforeRecovery -join '') -ceq ($retained -join '') -and (Same-Set @($script:MockDoh | ForEach-Object {$_.ServerAddress}) $P1s)) ('T7_K' + $case[0].Substring(4)) 'Killed before DoH ownership commit: recovery removes marked NRPT but retains ambiguous DoH and recovery journal' 'R15-V' -FailureMessage $res
+        $again = ''; try { Restore-State (Read-State) | Out-Null } catch { $again = $_.Exception.Message }
+        $afterRetry = @($script:MockDoh | Sort-Object ServerAddress | Select-Object ServerAddress,DohTemplate,AutoUpgrade,AllowFallbackToUdp | ConvertTo-Json -Compress)
+        Assert-Condition ($again -like '*DOH_OWNERSHIP_UNCERTAIN*' -and (Read-State).Phase -eq 'Restoring' -and ($retained -join '') -ceq ($afterRetry -join '')) ('T7_K' + $case[0].Substring(4) + '_Retry') 'Repeated interrupted recovery preserves ambiguous registrations byte-for-byte and refuses ownership' 'R15-V' -FailureMessage $again
+    } else {
+        Assert-Condition ($res -eq 'OK' -and (Read-State).Phase -eq 'Restored' -and $script:MockRules.Count -eq 0 -and $script:MockDoh.Count -eq 0) ('T7_K' + $case[0].Substring(4)) 'Killed after marked NRPT creation with no DoH mutation: recovery removes owned rules and closes journal' 'R15-V' -FailureMessage $res
+    }
 }

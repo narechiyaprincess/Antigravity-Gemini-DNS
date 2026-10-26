@@ -1,4 +1,4 @@
-param([string]$Dotnet='dotnet',[string]$OutputDirectory=(Join-Path $PSScriptRoot '..\.work\build'),[string]$BuildRoot=(Join-Path ([IO.Path]::GetTempPath()) ('AntigravityDnsBuild-'+[guid]::NewGuid().ToString('N'))))
+param([string]$Dotnet='dotnet',[string]$OutputDirectory=(Join-Path $PSScriptRoot '..\.work\build'),[string]$BuildRoot=(Join-Path ([IO.Path]::GetTempPath()) ('AntigravityGeminiDnsBuild-'+[guid]::NewGuid().ToString('N'))),[string]$RestoreSource='')
 $ErrorActionPreference='Stop'
 # Safety: a heavy build must not start on a nearly full disk (override: $env:AGDNS_MIN_FREE_GB).
 $minFreeGb=10;if($env:AGDNS_MIN_FREE_GB -match '^\d+$'){$minFreeGb=[int]$env:AGDNS_MIN_FREE_GB}
@@ -20,12 +20,13 @@ try{
  $env:DOTNET_NOLOGO='1'
  New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
  $bin=Join-Path $BuildRoot 'bin';$obj=Join-Path $BuildRoot 'obj'
- & $Dotnet publish (Join-Path $PSScriptRoot 'AntigravityDnsUnlocker.csproj') -c Release -r win-x64 --self-contained true -o $OutputDirectory "-p:BaseOutputPath=$bin\" "-p:BaseIntermediateOutputPath=$obj\" --nologo
+ $restoreArgs=@();if($RestoreSource){$restoreArgs+=('-p:RestoreSources='+[IO.Path]::GetFullPath($RestoreSource))}
+ & $Dotnet publish (Join-Path $PSScriptRoot 'AntigravityGeminiDns.csproj') -c Release -r win-x64 --self-contained true -p:PublishTrimmed=false -p:PublishReadyToRun=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:Deterministic=true "-p:PathMap=$PSScriptRoot=/_/src/app" -o $OutputDirectory "-p:BaseOutputPath=$bin/" "-p:BaseIntermediateOutputPath=$obj/" @restoreArgs --nologo
  if($LASTEXITCODE -ne 0){throw 'Publish failed'}
  Write-Output ('Portable folder: '+[IO.Path]::GetFullPath($OutputDirectory))
 }finally{
  foreach($n in $saved.Keys){[Environment]::SetEnvironmentVariable($n,$saved[$n],'Process')}
- if($ownRoot -and (Split-Path -Leaf $BuildRoot) -like 'AntigravityDnsBuild-*' -and (Test-Path -LiteralPath $BuildRoot)){
+ if($ownRoot -and (Split-Path -Leaf $BuildRoot) -like 'AntigravityGeminiDnsBuild-*' -and (Test-Path -LiteralPath $BuildRoot)){
   try{[IO.Directory]::Delete($BuildRoot,$true)}catch{Write-Warning ('Build temp not removed: '+$BuildRoot)}
  }
 }

@@ -1,29 +1,22 @@
 # Changelog
 
-Notable changes are recorded here using a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style. Historical test-tier names are not application releases.
+## 1.1.0 — подготовлено 26.10.2026; дата публикации не назначена
 
-## [Unreleased]
+- Продукт переименован в Antigravity-Gemini DNS; build target — `AntigravityGeminiDns.exe`. Идентификаторы настроек и журнала сохранены для совместимости.
+- Независимый выбор Antigravity, Gemini и Google/browser-сервисов. Direct-first проверяет возможность прямого доступа до создания моста.
+- Обычный GUI использует координатор подготовки, применения, проверки и восстановления; усилены отмена, сериализация, актуальность наблюдений и обработка неопределённого результата.
+- Doctor показывает диагностику по слоям. Статусы разделяют состояние DNS-политики, доступность провайдера и готовность приложения.
+- Усилены владение NRPT/DoH, журнал Schema 2, восстановление и проверки задач повышенного автозапуска; чужие или неоднозначные записи сохраняются. Предпочтения можно переносить файлом без системного журнала.
+- Сетевой бюджет замера сокращён с 30 до 10 секунд; завершение отмены и отрисовка добавляют время. Это не время всей операции подключения. Лучший профиль выбирается по свежим завершённым данным.
+- Каталог `2026.10.26.1`: сохранены default `dns.malw.link` и `dns.comss.one`; обновлены адреса COMSS/Bezmezhau; `xbox-dns.ru` и `dns.dns-ai.ru` выведены. Добавлены experimental `dns.zapret.moe` и `eu.geohide.ru`; `geohide.ru` помечен experimental. Работавший retired bridge остаётся отключаемым; новый выбор retired-профиля заменяется default.
+- Доверие встроенным провайдерам подтверждается для каталога; custom DoH подтверждается отдельно. Починка доступна явно; автоматическая починка ограничена уже повышенным процессом и частотой попыток.
+- Доработаны карточки профилей, история, сообщения, DPI и цвета действий. Portable single-file содержит полный WinForms runtime без trimming, с compression и без ReadyToRun.
+- Сохраняются два P2: native-контекст учитывает второстепенные NIC и может отказать при их изменении; ускоренное подтверждение результата не используется обычным координатором. Оба не считаются исправленными, ускорение подключения на 6–8 секунд не заявляется.
 
-### Added
+Перед обновлением с 1.0.0 отключите мост старой версией, подтвердите восстановление и закройте её. [Заметки и ограничения](docs/RELEASE-NOTES-1.1.0.md) · [English notes](docs/RELEASE-NOTES-1.1.0-EN.md).
 
-- Windows CI and tag-build artifact workflows, a shared offline technical check, and a pinned .NET SDK.
-- Security policy, contribution guide, and Russian/English troubleshooting guides.
-- Dependabot checks for the GitHub Actions used by these workflows.
+## 1.0.0
 
-### Changed
+Первый публичный выпуск Antigravity DNS Unlocker / Antigravity DNS: Windows portable EXE, встроенные DNS/DoH-профили, benchmark и выбор провайдера, пользовательский DoH, подключение и базовое восстановление DNS-политики, Antigravity/Gemini/Google scope, RU/EN, tray, обычный автозапуск, история, логи и отчёт для поддержки.
 
-- README and build-guide navigation, CI coverage documentation, and source packaging of repository guidance.
-- Standalone engine test setup now creates a mismatched pending DoH registration for the existing ambiguity-preservation assertion, consistent with current interrupted-apply recovery tests.
-
-## [1.0.0] - 2026-10-15
-
-### Added
-
-- Public Windows x64 portable release of Antigravity DNS, with Russian and English UI.
-- DNS/DoH provider measurement and selection, domain-scoped bridge configuration for Antigravity, Gemini Desktop, and Google browser use, and restoration using an ownership journal.
-- Support-report preview and local diagnostics.
-
-This entry describes the published [v1.0.0 release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/tag/v1.0.0) and the source prepared in commit [`dcb571b`](https://github.com/narechiyaprincess/Antigravity-DNS/commit/dcb571b). Earlier development milestones have not been reconstructed into a release history.
-
-[Unreleased]: https://github.com/narechiyaprincess/Antigravity-DNS/compare/v1.0.0...main
-[1.0.0]: https://github.com/narechiyaprincess/Antigravity-DNS/releases/tag/v1.0.0
+Эти возможности не являются новинками 1.1.0. Внутренние этапы разработки между публичными версиями не перечислены как отдельные выпуски.

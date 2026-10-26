@@ -1,19 +1,25 @@
-# Local builds, release assets, test receipts and captures
-/src/.work/
+# Builds, delivery assets and evidence stay outside version control.
+.work/
 /release/
+/deliverables/
 /dist/
 /build/
+/_local/
 **/bin/
 **/obj/
 *.exe
 *.dll
 *.pdb
+*.obj
 *.msi
 *.msix
 *.zip
+*.rar
+*.7z
 *.lnk
-
-# IDE and operating-system state
+*.cmd
+/src/.closeout-path
+# IDE / OS state
 .vs/
 .vscode/
 .idea/
@@ -24,8 +30,7 @@
 Thumbs.db
 Desktop.ini
 .DS_Store
-
-# Local credentials and configuration
+# Credentials and personal configuration
 .env
 .env.*
 !.env.example
@@ -37,8 +42,7 @@ Desktop.ini
 *.key
 NuGet.Config
 nuget.config
-
-# Scratch files, logs and optional Python mutation tooling
+# Scratch, logs and local process history
 *.log
 *.tmp
 *.bak
@@ -50,3 +54,5 @@ venv/
 .cache/
 /tmp/
 /temp/
+/vault/
+/docs/history/

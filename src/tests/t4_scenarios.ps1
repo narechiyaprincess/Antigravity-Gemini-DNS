@@ -1,5 +1,5 @@
 # t4_scenarios.ps1 - Tier 4: Real-World Application Scenarios Test Suite
-# Realistic end-to-end multi-step application workflows (8 comprehensive scenarios)
+# Realistic end-to-end multi-step application workflows (8 scenarios)
 # Strictly offline: zero mutations to host network or system state.
 
 param(
@@ -47,7 +47,7 @@ $s01Step2 = ($s01State.Phase -eq 'Active' -and
 Assert-Condition ($s01Step1 -and $s01Step2) 'T4_S01' 'Scenario 1: Cold start activation transitions atomically to Active' 'P1+Lifecycle'
 
 # ==============================================================================
-# Scenario S02: Hot Provider Migration (P1 -> P2)
+# Scenario S02: Hot Provider Migration (P1 to P2)
 # ==============================================================================
 Reset-MockEnvironment (Join-Path $ScratchPath 't4_s02')
 # 1. Start with P1 Active
@@ -117,7 +117,7 @@ $rulesAfterOutage = $script:MockRules.Count
 Assert-EqualValues $rulesAfterOutage $rulesBeforeOutage 'T4_S04' 'Scenario 4: Total external outage shields active bridge from removal' 'F04'
 
 # ==============================================================================
-# Scenario S05: Aborted Provider Migration with Rollback (P1 -> Broken P3)
+# Scenario S05: Aborted Provider Migration with Rollback (P1 to broken P3)
 # ==============================================================================
 Reset-MockEnvironment (Join-Path $ScratchPath 't4_s05')
 # 1. Start with active P1
@@ -183,7 +183,7 @@ Assert-Condition $s06Clean 'T4_S06' 'Scenario 6: Disaster recovery cleans up App
 $buildScript = Join-Path $sourceRoot 'Build.ps1'
 $buildRaw = Get-Content $buildScript -Raw
 $hasWorkPortableDefault = ($buildRaw -match '\.work\\build')
-$hasCsprojTarget = ($buildRaw -match 'AntigravityDnsUnlocker\.csproj')
+$hasCsprojTarget = ($buildRaw -match 'AntigravityGeminiDns\.csproj')
 $portableDirExists = Test-Path $portableRoot
 $s07Valid = ($hasWorkPortableDefault -and $hasCsprojTarget -and $portableDirExists)
 Assert-Condition $s07Valid 'T4_S07' 'Scenario 7: Packaging contracts isolate build output to src\.work\build' 'F01+Packaging'

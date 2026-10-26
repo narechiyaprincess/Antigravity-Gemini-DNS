@@ -8,12 +8,12 @@ using System.Security.Principal;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // The PowerShell engine ships inside the exe as resources. Before every launch it is materialised into a directory that
  // ordinary users cannot write to (elevated runs) and its SHA-256 is re-verified immediately before PowerShell starts.
  public static class ScriptStore {
   public static readonly string[] ScriptNames={"Engine.ps1","EmergencyRestore.ps1","Integration.ps1","profiles.json"};
-  public const string ExeName="AntigravityDnsUnlocker.exe";
+  public const string ExeName="AntigravityGeminiDns.exe";
   const string SystemSid="S-1-5-18",AdminsSid="S-1-5-32-544",UsersSid="S-1-5-32-545";
 
   public sealed class Prepared {
@@ -53,8 +53,8 @@ namespace AgDns {
   public static string Fingerprint(Dictionary<string,string> hashes)=>Sha256(Encoding.UTF8.GetBytes(string.Join("\n",ScriptNames.Select(n=>n+":"+hashes[n]))));
 
   public static string DefaultRoot(bool elevated)=>elevated
-   ?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"AntigravityDnsUnlocker","bin")
-   :Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AntigravityDnsUnlocker","bin");
+   ?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),AppIdentity.StorageName,"bin")
+   :Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),AppIdentity.StorageName,"bin");
 
   // SYSTEM + Administrators: full control. Users: read/execute only. No inheritance from the parent.
   public static DirectorySecurity BuildProtectedAcl(bool withOwner=true) {

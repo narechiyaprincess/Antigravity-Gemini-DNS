@@ -22,8 +22,8 @@ Keep certificate validation enabled and do not install unknown root certificates
 
 ## Connected, but Antigravity, Gemini, or the browser still fails
 
-- Check the Bridge scope: the core mode covers two Antigravity API domains; + Gemini Desktop adds Gemini domains; + Browser extends rules to Google suffixes. See the [complete domain list](TECHNICAL.md#services-and-scope).
-- Browser Secure DNS/DoH can bypass the Windows resolver. In + Browser mode, use the selected browser's diagnostics and recommendations. The app does not rewrite browser settings.
+- Check the independent Bridge groups: Antigravity, Gemini and Google/browser; at least one must be selected. See [services and scope](TECHNICAL.md#services-and-scope).
+- Browser Secure DNS/DoH can bypass the Windows resolver. With Google/browser services selected, use the selected browser's diagnostics and recommendations. The app does not rewrite browser settings.
 - VPN/TUN and other network software can use a different resolver or route. Compare their settings with the diagnostics. For NRPT/DoH conflicts, inspect Details and preserve other software's or corporate rules. Coordinate changes with the administrator of a managed computer.
 - If security software blocks the EXE or PowerShell, retain its message and the app's error code for diagnosis. Do not disable protection wholesale.
 
@@ -46,3 +46,9 @@ Settings, history, and UI errors live in `%LocalAppData%\AntigravityDnsUnlocker`
 Automatic redaction still needs review: remove personal paths, computer/network names, tokens, and private DoH URLs. Do not attach raw `settings.json`, `state.json`, or user logs. Then use the [bug report form](https://github.com/narechiyaprincess/Antigravity-DNS/issues/new/choose). Follow [SECURITY.md](../../SECURITY.md) for suspected vulnerabilities, without posting public details.
 
 More information: [architecture, security, and diagnostic limits](TECHNICAL.md), [build and offline checks](../BUILDING.md).
+
+## Upgrade and network-context refusal
+
+Before upgrading from 1.0.0, disconnect with the old version, confirm restoration and close it; then start 1.1.0. Disconnect with 1.1.0 before downgrading because the old engine cannot read Schema 2. Never delete the journal.
+
+Run Doctor for diagnostics. Secondary-adapter changes may conservatively refuse an operation (known P2). Wait for stable network state and retry. [v1.1.0 limits](../RELEASE-NOTES-1.1.0-EN.md).

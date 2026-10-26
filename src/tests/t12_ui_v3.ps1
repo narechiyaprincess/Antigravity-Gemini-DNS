@@ -15,16 +15,17 @@ Write-Host "--- Executing Tier 12: interface pass v3 Tests ---" -ForegroundColor
 
 function Get-Src([string]$Name) { Get-Content -LiteralPath (Join-Path $sourceRoot $Name) -Raw -Encoding UTF8 }
 
-# N01: the program is called "Antigravity DNS" in every string it shows; registry keys, mutexes, folders and the exe keep the old identifiers (no space in them)
+# N01: the program is called "Antigravity-Gemini DNS" in every string it shows; registry keys, mutexes and data folders keep the old identifiers (AppIdentity.StorageName, see docs/COMPATIBILITY-IDENTIFIERS.md)
 $offenders = @()
 foreach ($f in Get-ChildItem -LiteralPath $sourceRoot -Filter *.cs) {
     if ($f.Name -like 'OfflineTests*') { continue }
     foreach ($m in [regex]::Matches((Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8), '"[^"\r\n]*(Antigravity (DNS )?Unlocker|DNS Unlocker)[^"\r\n]*"')) { $offenders += "$($f.Name) :: $($m.Value)" }
 }
 Assert-Condition ($offenders.Count -eq 0) 'T12_N01' 'No string of the program says "Antigravity Unlocker" or "DNS Unlocker" (window, tray, notifications, dialogs, info, report, help)' 'R-UIV3' -FailureMessage (($offenders | Select-Object -First 5) -join ' | ')
-$csproj = Get-Src 'AntigravityDnsUnlocker.csproj'
+$csproj = Get-Src 'AntigravityGeminiDns.csproj'
 $mf = Get-Src 'MainForm.cs'
-Assert-Condition ($csproj -match '<AssemblyName>AntigravityDnsUnlocker</AssemblyName>' -and $csproj -match '<Version>1\.0\.0</Version>' -and $mf -match 'AntigravityDnsUnlocker') 'T12_N02' 'The exe name, the version 1.0.0 and the registry/mutex identifiers are unchanged by the renaming' 'R-UIV3'
+$programIdentity = Get-Src 'Program.cs'
+Assert-Condition ($csproj -match '<AssemblyName>AntigravityGeminiDns</AssemblyName>' -and $csproj -match '<Version>1\.1\.0</Version>' -and $programIdentity -match 'StorageName="AntigravityDnsUnlocker"' -and $programIdentity -match 'ValueName=AppIdentity\.StorageName' -and $programIdentity -match '@"Local\\"\+AppIdentity\.StorageName\+"UI-"' -and $programIdentity -match '@"Local\\"\+AppIdentity\.StorageName\+"Show-"' -and $programIdentity -match 'Path.GetFullPath\(Environment.ProcessPath' -and $programIdentity -match 'SHA256.HashData') 'T12_N02' 'The assembly name, version 1.1.0 and the compatibility registry/mutex identity are preserved' 'R-UIV3'
 
 # N03: "DNS is not proxied": no text says so; the one place that names a proxy says what it is (the provider's intermediary server)
 $lang = Get-Src 'Lang.cs'
@@ -48,18 +49,24 @@ Assert-Condition ($ui -match 'public string Browser=""') 'T12_B05' 'AppSettings 
 
 
 # I01: info page text
-Assert-Condition ($mf -match 'Российским аккаунтам для стабильной работы нужен ещё Antigravity Patcher\.' -and $mf -match 'tgRow\.Subtitle=L\.T\("Автор Antigravity DNS"\)' -and $mf -match 'MakeLabel\("Antigravity DNS",' -and $mf -match 'MakeLabel\("by "\+Credit,') 'T12_I01' 'Info: the patcher sentence, the contact caption «Автор Antigravity DNS» and the card title «Antigravity DNS / by …»' 'R-UIV3'
+Assert-Condition ($mf -match 'Российским аккаунтам для стабильной работы нужен ещё Antigravity Patcher\.' -and $mf -match 'tgRow\.Subtitle=L\.T\("Автор Antigravity-Gemini DNS"\)' -and $mf -match 'MakeLabel\("Antigravity-Gemini DNS",' -and $mf -match 'MakeLabel\("by "\+Credit,') 'T12_I01' 'Info: the patcher sentence, the contact caption «Автор Antigravity-Gemini DNS» and the card title «Antigravity DNS / by …»' 'R-UIV3'
 
 # S01: the live-window stress (per-monitor DPI changes, animation, real mouse messages, tips, the browser question, repeated repaints) paints without a single failure
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 if (Test-Path -LiteralPath $sourceExe) {
     $psi = New-Object Diagnostics.ProcessStartInfo $sourceExe
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.Arguments = '--ui-stress'
-    $p = [Diagnostics.Process]::Start($psi); $so = $p.StandardOutput.ReadToEndAsync(); [void]$p.StandardError.ReadToEndAsync()
+    $p = [Diagnostics.Process]::Start($psi); $so = $p.StandardOutput.ReadToEndAsync(); $se = $p.StandardError.ReadToEndAsync()
     $done = $p.WaitForExit(240000)
     if (-not $done) { try { $p.Kill() } catch {} }
     $out = if ($done) { $so.Result } else { 'TIMEOUT' }
-    Assert-Condition ($done -and $p.ExitCode -eq 0 -and $out -match 'UI_STRESS_PASS') 'T12_S01' 'The window survives the live-conditions stress (--ui-stress): DPI changes, animation, mouse, tips, the browser question, repaints' 'R-UIV3' -FailureMessage (($out -split "`n" | Select-Object -Last 6) -join ' | ')
+    $err = if ($done) { $se.Result } else { 'TIMEOUT: stderr collection incomplete' }
+    [void][IO.Directory]::CreateDirectory($ScratchPath)
+    [IO.File]::WriteAllText((Join-Path $ScratchPath 'ui-stress.stdout.txt'), $out)
+    [IO.File]::WriteAllText((Join-Path $ScratchPath 'ui-stress.stderr.txt'), $err)
+    $exit = if ($done) { $p.ExitCode } else { $null }
+    [pscustomobject]@{Completed=$done;ExitCode=$exit;CandidateSha256=(Get-FileHash -LiteralPath $sourceExe).Hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ScratchPath 'ui-stress-process.json')
+    Assert-Condition ($done -and $p.ExitCode -eq 0 -and $out -match 'UI_STRESS_PASS') 'T12_S01' 'The window survives the live-conditions stress (--ui-stress): DPI changes, animation, mouse, tips, the browser question, repaints' 'R-UIV3' -FailureMessage ('exit=' + $exit + '; ' + (($out -split "`n" | Select-Object -Last 6) -join ' | ') + '; stderr=' + $err)
 }
 
 # S02: a wrong operation id is refused before anything is started (a mutation must not run and then lose its receipt)
@@ -85,6 +92,6 @@ Assert-Condition ($isd -match 'New-ProtectedDirectory \$script:Root' -and $isd -
 # R01: certificate revocation with soft failure for unreachable revocation servers: every place that validates a provider's or Google's certificate asks CertRevocation
 $ok = $true; $missing = @()
 foreach ($f in @('Program.cs', 'Network.cs', 'Benchmark.cs')) { if ((Get-Src $f) -notmatch 'RemoteCertificateValidationCallback=CertRevocation\.Callback') { $ok = $false; $missing += $f } }
-if ((Get-Src 'Probing.cs') -notmatch 'CertRevocation\.IsRevoked\(rc\)') { $ok = $false; $missing += 'Probing.cs' }
+if ((Get-Src 'Probing.cs') -notmatch 'new X509Certificate2\(rc\)' -or (Get-Src 'Probing.cs') -notmatch 'using\(copy\)return CertRevocation\.IsRevoked\(copy\)' -or (Get-Src 'Probing.cs') -notmatch 'WaitAsync\(cts.Token\)') { $ok = $false; $missing += 'Probing.cs' }
 $cr = Get-Src 'CertRevocation.cs'
 Assert-Condition ($ok -and $cr -match 'X509RevocationMode\.Online' -and $cr -match 'X509ChainStatusFlags\.Revoked' -and $cr -match 'Unknown' -and $cr -match 'FromHours\(6\)') 'T12_R01' 'Every TLS check of a provider or Google (HTTP probes, DoH, benchmark, TLS-on-name) refuses an explicitly revoked certificate; an unknown status is no refusal; one look per certificate per six hours' 'R-AUDIT' -FailureMessage ($missing -join ', ')

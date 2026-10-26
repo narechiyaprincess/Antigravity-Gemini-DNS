@@ -6,7 +6,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // The ping shown on the main page while the bridge works: the round trip of a TCP connect to the provider's intermediary server for an Antigravity host.
  // Read-only, like the benchmark: one DoH query to the active provider for the proxy address, then a few TLS handshakes with full certificate
  // validation (SNI = the Google host). A sample counts only if TLS passed, so the number always belongs to a proxy that really serves the host.
@@ -26,15 +26,41 @@ namespace AgDns {
   public const int Samples=3,TimeoutMs=2500;
   public static readonly TimeSpan Fresh=TimeSpan.FromMinutes(2);   // a newer result is shown as is; an older one is measured again on the next look
 
+  public const int HedgeMs=500;   // a server that has not answered within this time is joined by the next one; the first answer wins
+  static async Task<string> AskAsync(ISpeedProbe probe,string template,string server,string host,CancellationToken ct) {
+   Reply r;try{r=await probe.Doh(template,server,host,TimeoutMs,ct);}catch(OperationCanceledException){throw;}catch{return null;}
+   return r?.Addresses?.FirstOrDefault(a=>IPAddress.TryParse(a,out var ip)&&ip.AddressFamily==AddressFamily.InterNetwork&&Program.PublicIp(a));
+  }
+  // The servers are tried in order, as before; but one that is silent does not hold the next back for its whole timeout: after HedgeMs the next server is asked too
+  // (a provider whose servers are all down then costs about one timeout, not one per server). A server that answers at once is the only one ever asked.
+  static async Task<string> FindProxyAsync(ISpeedProbe probe,string template,string[] servers,string host,CancellationToken ct) {
+   var running=new List<Task<string>>();int next=0;string proxy=null;
+   using(var race=CancellationTokenSource.CreateLinkedTokenSource(ct)) {
+    try {
+     while(proxy==null) {
+      ct.ThrowIfCancellationRequested();
+      if(next<servers.Length)running.Add(AskAsync(probe,template,servers[next++],host,race.Token));
+      if(running.Count==0)break;
+      Task hedge=next<servers.Length?Task.Delay(HedgeMs,race.Token):null;
+      while(proxy==null&&running.Count>0) {
+       var waits=new List<Task>(running);if(hedge!=null)waits.Add(hedge);
+       var done=await Task.WhenAny(waits);
+       if(done==hedge)break;
+       var finished=(Task<string>)done;running.Remove(finished);
+       proxy=await finished;
+       if(proxy==null&&next<servers.Length)break;   // this one gave nothing: the next starts at once
+      }
+      if(next>=servers.Length&&running.Count==0)break;
+     }
+    } finally { race.Cancel(); }
+   }
+   return proxy;
+  }
+
   public static async Task<SpeedResult> MeasureAsync(ISpeedProbe probe,string template,string[] servers,string host,CancellationToken ct) {
    var res=new SpeedResult{Utc=DateTime.UtcNow};
    if(string.IsNullOrWhiteSpace(template)||servers==null||servers.Length==0||string.IsNullOrWhiteSpace(host)){res.Error="NO_BRIDGE";return res;}
-   foreach(string s in servers) {
-    ct.ThrowIfCancellationRequested();
-    Reply r;try{r=await probe.Doh(template,s,host,TimeoutMs,ct);}catch(OperationCanceledException){throw;}catch{continue;}
-    res.Proxy=r?.Addresses?.FirstOrDefault(a=>IPAddress.TryParse(a,out var ip)&&ip.AddressFamily==AddressFamily.InterNetwork&&Program.PublicIp(a));
-    if(res.Proxy!=null)break;
-   }
+   res.Proxy=await FindProxyAsync(probe,template,servers,host,ct);
    if(res.Proxy==null){res.Error="NO_ANSWER";return res;}
    var times=new List<long>();
    for(int i=0;i<Samples;i++) {

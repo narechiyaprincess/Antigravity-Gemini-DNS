@@ -1,108 +1,61 @@
-# Build, verify, package
+# Сборка и безопасная проверка
 
-[Русский README](../README.md) · [English README](EN/README.md)
+Требуются Windows 11 x64, Windows PowerShell 5.1 и .NET SDK 10.0.402
+(либо более новый patch той же feature band согласно `global.json`). Windows 10
+в этом выпуске не проверялась. Для restore нужны NuGet.org или уже заполненный
+локальный cache runtime packs. Для обычной сборки права администратора не нужны.
 
-Commands below run from the repository root in PowerShell. They build and check the current source without changing live DNS policy. Interactive connection/restoration and `src/app/Integration.ps1` are separate operations; the latter exercises live system configuration and is not part of offline verification.
+Из корня отдельно скопированного проекта:
 
-## Prerequisites
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Build.ps1
+```
 
-- Windows x64, an interactive desktop for UI checks, Windows PowerShell 5.1 (`powershell.exe`).
-- [.NET SDK 10.0.401](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), exactly as pinned in [global.json](../global.json). Check with `dotnet --version` from the repository root. A different installed version does not satisfy the pin.
-- NuGet access for the first restore of runtime, linker, and ReadyToRun build packs. There are no third-party `PackageReference` entries.
-- At least 10 GiB free on the source and build-temp drives, enforced by `Build.ps1`.
+Результат: `src/.work/build/AntigravityGeminiDns.exe`. `Build.ps1` не изменяет
+пользовательский PATH, ярлык или `release/`. Промежуточные `bin/obj` находятся
+в отдельном временном каталоге; явно заданный `-BuildRoot` сохраняется.
+Другой output: `-OutputDirectory <путь>`. Offline restore с заполненным cache:
+`-RestoreSource "$env:USERPROFILE/.nuget/packages"`. Проверяется минимум 10 GiB
+свободного места; `AGDNS_MIN_FREE_GB` может изменить порог.
 
-Python is optional and is only used by `src/tools/mutate.py`; the application, build, and normal verification do not need it.
+Финальный рецепт: Release, `net10.0-windows`, `win-x64`, self-contained,
+single-file, compression on, ReadyToRun off, trimming off, COM/reflection on,
+без PDB. Версия берётся из `<Version>` в `.csproj`. Trimming для WinForms
+[не поддерживается SDK](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/incompatibilities#windows-forms).
+PathMap и deterministic compilation сокращают зависимость от пути проекта;
+побайтовая идентичность между разными SDK/runtime packs не обещается.
 
-## Hosted CI
+Полный безопасный gate (уникальный Tag сохраняет прежние логи):
 
-The [CI workflow](../.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and manual dispatch. It uses `windows-2025`, Windows PowerShell 5.1, and the pinned SDK. Run the same technical gate locally:
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify.ps1 -Tag local-unique -NoPublish
+```
+
+Он запускает build, self-test, offline E2E, UI smoke/states/stress/surfaces,
+RU/EN при 96/120/144/192 DPI и EXE отдельно в пустой папке. Логи и JSON receipts:
+`src/.work/logs/<Tag>/`. `-NoBuild -ExeOverride <absolute.exe>` проверяет готовый
+EXE. `-Publish` заменяет локальный `release/` и ярлык; для тестирования его не
+передавать. Offline suite использует только изолированный `HKCU/Software/AgDnsTest`
+и остановится, если он уже существует. Не запускать два таких набора одновременно.
+
+Дополнительные offline suites:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Engine.S05.Tests.ps1 -ScratchPath .\src\.work\engine-fixture
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Engine.Gaps.Tests.ps1 -ScratchPath .\src\.work\gaps-fixture
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\AssistedNative.Tests.ps1 -ScratchPath .\src\.work\assisted-fixture
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tests\Tooling.Tests.ps1 -EvidenceDirectory .\src\.work\tooling-fixture
+```
+
+`--integration`/`Integration.ps1`, `--enable`, `--restore`, broker installation,
+real startup changes и live assisted leases меняют систему. Они требуют отдельного
+разрешения и подходящего изолированного Windows окружения; offline PASS их не заменяет.
+## Короткий CI gate
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify-ci.ps1
 ```
 
-It invokes the existing build, `--version`, `--self-test`, `--verify-scripts`, `Engine.Tests.ps1` with a disposable scratch path, and offline runner `-Tier 14`, checking exit codes, success markers, version agreement, and the host-state receipt. The build performs NuGet restore. Self-tests use synthetic responses, temporary files, loopback networking, and disposable test registry keys. Embedded-script verification stages resources in the local application cache. Engine tests mock policy changes but still enumerate local adapters through read-only CIM; their scratch data stays in `src/.work/engine-ci-<id>/`. No public provider is required by these tests, and no live DNS mutation or UAC operation is invoked.
+Реальные workflows: [CI](../.github/workflows/ci.yml) на push main/codex branches и PR; [ручная проверка source](../.github/workflows/release.yml) только workflow_dispatch. Оба используют pinned SDK из global.json и `verify-ci.ps1`: Build.ps1, --version, --self-test, --verify-scripts, mock Engine.Tests и offline tier 14 с проверкой Completed/HostUnchanged. Полный локальный gate выше включает все tiers 1–15. CI не передаёт -Publish, не запускает UI/live integration и не публикует Release. Build.ps1 внутри вызывает dotnet publish для создания изолированного EXE; это локальная компиляция, не публикация на GitHub и не замена работающего приложения.
 
-This is a technical gate, not the full local suite. `Current` includes tier 6's fake-CIM seam, which `Engine.ps1` deliberately ignores in an elevated process; hosted Windows jobs must not assume an unelevated token. Full UI/DPI checks also require a desktop. CI therefore runs tier 14 only; run the full wrapper below on a **non-elevated interactive desktop**. Do not weaken the production privilege guard to accommodate CI. Hosted logs are retained for 7 days; local CI logs are under `src/.work/logs/ci/`.
-
-## Build
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Build.ps1
-& .\src\.work\build\AntigravityDnsUnlocker.exe --version
-& .\src\.work\build\AntigravityDnsUnlocker.exe --self-test
-& .\src\.work\build\AntigravityDnsUnlocker.exe --verify-scripts
-```
-
-The project targets `net10.0-windows` and publishes a self-contained `win-x64` single file. `Engine.ps1`, `Integration.ps1`, `EmergencyRestore.ps1`, and `profiles.json` are embedded. Users need only the EXE. The assembly keeps the internal name `AntigravityDnsUnlocker`; local packaging can safely rename the executable to `AntigravityDNS.exe`.
-
-Build output defaults to `src/.work/build`. Intermediate files are placed in an isolated temporary build directory. To use an SDK that is not on PATH:
-
-```powershell
-$sdk = (Resolve-Path .\tools-local\dotnet\dotnet.exe).Path # replace with your installed SDK
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Build.ps1 -Dotnet $sdk
-```
-
-For the verification wrapper, pass `-Dotnet $sdk` or set `$env:AGDNS_DOTNET = $sdk` in the current PowerShell session. `dev.ps1` and the optional mutation tool also respect `AGDNS_DOTNET`. No personal SDK path is stored in the repository.
-
-`<Version>` in [the project file](../src/app/AntigravityDnsUnlocker.csproj) is the application version. Historical tier names such as `t8_release_1_6.ps1` identify test groups; they do not set the application version.
-
-### Existing WinForms trimming tradeoff
-
-The supplied project intentionally enables trimming, single-file compression, and ReadyToRun. It bypasses the SDK's WinForms trimming guard through `_SuppressWinFormsTrimError`, retains the application assembly, and enables reflection JSON and built-in COM support. This is an existing packaging choice, **not officially supported WinForms trimming**. Microsoft's [trimming incompatibility guide](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/incompatibilities#windows-forms) explains the limitation.
-
-Run the actual published binary through UI and standalone checks after changing source or SDK. These checks reduce observed compatibility risk; they do not establish support on every Windows release. An untrimmed packaging change requires its own review and verification.
-
-## Verify current source
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify.ps1 -Tag local -NoPublish
-```
-
-This builds, runs the self-test, offline E2E **tiers 5–14**, UI smoke/states/stress/surfaces, four scale factors (96/120/144/192 DPI) in Russian and English, and the executable alone in an empty directory. Output and receipts stay in `src/.work/`; the wrapper log directory is `src/.work/logs/local/`.
-
-Use an existing build:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify.ps1 -Tag local -NoBuild -NoPublish
-```
-
-To run a single offline tier:
-
-```powershell
-$env:AGDNS_EXE = (Resolve-Path .\src\.work\build\AntigravityDnsUnlocker.exe).Path
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tests\run_offline_e2e_tests.ps1 -Tier 14
-```
-
-`Current` is the default tier set. The offline runner mocks DNS-policy writes and uses synthetic network responses; it checks that real NRPT, DoH registrations, adapter DNS, the live journal, and autostart remain unchanged. It creates scratch files and uses the dedicated `HKCU:\Software\AgDnsTest` test key, which it removes afterwards. Do not store personal data in that test namespace. UI checks require an interactive Windows session and may briefly display dialogs.
-
-`verify.ps1` without `-NoPublish` also promotes a passing build to the **local** `release/AntigravityDNS.exe` and updates a root shortcut. It does not upload to GitHub. Keep `-NoPublish` for ordinary checks. Use unique `-Tag` names when retaining previous receipts.
-
-### Historical tiers 1–4
-
-The legacy contract tests remain available through `-Tier All` or `-Tier 1` through `4`. The historical PowerShell scripts are retained as source fixtures; their existence and hashes are checked without distributing the old executable or its debug symbols.
-
-Tier 1 also asserts a local release layout: a root launcher pointing to `release/AntigravityDNS.exe` and local-launch instructions in the root README. A public source checkout has a different README and no generated launcher. Use the default `Current` set for public-checkout verification.
-
-## Local packaging
-
-After verification, this command prepares an ignored local release and launcher:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\package-release.ps1 -WhatIf
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\package-release.ps1
-```
-
-This helper manages `release/` as an application output directory: it moves other contents aside, can remove previous `.work/replaced` leftovers, and updates the shortcut. Keep personal files out of these output directories. `-WhatIf` previews the destination before replacement. It verifies version and SHA-256 and does not stop running copies.
-
-The separate [app/Package.ps1](../src/app/Package.ps1) helper creates an archive named `AntigravityDnsUnlocker-<version>-win-x64.zip` with `AntigravityDnsUnlocker.exe` and optional text instructions in `src/.work/dist/`. It also writes checksums. It is an alternative packaging format, not an additional runtime dependency.
-
-To package the source:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\package-source.ps1
-```
-
-This creates an ignored `source code.zip` with source, tests, documentation, license, SDK pin, repository guidance, workflows, templates and screenshots. Build output, logs, executables and debug symbols are excluded.
-
-For a public single-file asset, copy the verified EXE to an external release staging folder as `Antigravity-DNS-v<version>-win-x64.exe`, generate `SHA256SUMS.txt` with `Get-FileHash`, and keep release notes beside it. The [tag-build workflow and manual publication steps](RELEASING.md) prepare the same asset naming scheme without publishing a GitHub Release. Do not commit executable files, generated ZIPs, or signing material. Publishing a tag/release and uploading assets are separate maintainer actions.
+Логи: `src/.work/logs/ci/`; E2E receipt: `src/.work/offline_e2e_receipt.json`. `src/tools/ci/build.yml` — безопасный manual-only шаблон, не второй активный workflow. Локальный PASS не доказывает успешный hosted run.

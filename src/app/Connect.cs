@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // Which provider addresses a connect attempt will hand to the (elevated) engine, and where they came from.
  public sealed class AddressPlan {
   public string[] Servers=new string[0];
@@ -58,21 +58,22 @@ namespace AgDns {
    pins=(pins??new string[0]).Where(s=>!string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
    if(pins.Length>0) {
     string[] alive;
-    try{alive=await preflight(pins,template)??new string[0];}catch{alive=new string[0];}
-    if(alive.Length>0){plan.Servers=pins;plan.Source="pinned";return plan;}
+    try{alive=await preflight(pins,template)??new string[0];}catch(OperationCanceledException){throw;}catch{alive=new string[0];}
+    alive=alive.Where(s=>pins.Contains(s)&&Program.PublicIp(s)).Distinct().ToArray();
+    if(alive.Length>0){plan.Servers=alive;plan.Source="pinned";return plan;}
    }
    // the pins are dead (or absent). What the last bootstrap found is tried before the network is asked again, so a bootstrap that fails right now
    // (no cross-check reachable, name resolver down) does not cost the connection. Same preflight as for pins; an address that does not pass it is not used.
    var remembered=SavedAddresses.Usable(saved,now()).Except(pins).ToArray();
    if(remembered.Length>0) {
     string[] alive;
-    try{alive=await preflight(remembered,template)??new string[0];}catch{alive=new string[0];}
+    try{alive=await preflight(remembered,template)??new string[0];}catch(OperationCanceledException){throw;}catch{alive=new string[0];}
     alive=alive.Where(remembered.Contains).Distinct().ToArray();
     if(alive.Length>0){plan.Servers=alive;plan.Source="saved";plan.FoundUtc=SavedAddresses.FoundAt(saved).Value;return plan;}
    }
    string[] found;
    try{found=await bootstrap(template)??new string[0];}
-   catch(OperationCanceledException){throw;}   // the person closed the window: that is a cancelled operation, not a failed search
+   catch(OperationCanceledException){throw;}   // the user closed the window: that is a cancelled operation, not a failed search
    catch(BootstrapTimeoutException e){plan.Error="BOOTSTRAP_TIMEOUT";plan.Detail=e.Message;return plan;}
    catch(Exception e){plan.Error="BOOTSTRAP_FAILED";plan.Detail=e.Message;return plan;}
    found=found.Where(Program.PublicIp).Distinct().Take(MaxFound).ToArray();
@@ -83,7 +84,7 @@ namespace AgDns {
 
   // The real network: the pins go through the same candidate check the engine uses, the name through Bootstrap.
   public static Task<AddressPlan> ResolveLiveAsync(string template,string[] pins,CancellationToken ct=default,SavedAddr saved=null)=>ResolveAsync(template,pins,
-   async(servers,tmpl)=>(await Program.NetworkCandidates(servers,tmpl,false)).Where(c=>c.DohValidated).Select(c=>c.Server).ToArray(),
+   async(servers,tmpl)=>(await Program.NetworkCandidates(servers,tmpl,false,ct)).Where(c=>c.DohValidated).Select(c=>c.Server).ToArray(),
    tmpl=>Bootstrap.PinnedAsync(tmpl,ct),null,saved);
 
   // Human-readable origin of the addresses for the main page.

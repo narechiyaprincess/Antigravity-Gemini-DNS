@@ -51,14 +51,14 @@ $allCs = (Get-ChildItem -LiteralPath $sourceRoot -Filter '*.cs' | Where-Object {
 $elsewhere = ([regex]::Matches($allCs, 'new ProcessStartInfo\(PowerShell\)')).Count
 Assert-Condition ($starts -ge 2 -and $guarded -eq $starts -and $elsewhere -eq $starts -and $prog -match 'info\.Environment\["PSModulePath"\]=SystemModulePath') 'T14_M03' 'Every PowerShell started by the exe runs with PSModulePath = the system module folder only' 'P2-MODPATH' -FailureMessage ("starts=$starts guarded=$guarded all=$elsewhere")
 
-# T14_P01: the release is one file: release\ holds only AntigravityDNS.exe (or does not exist yet); there is no portable\ folder
+# T14_P01: the local release\ folder (not in the repository) holds only this product's exe, under the current or the legacy published name; there is no portable\ folder
 $release = Join-Path $repoRoot 'release'
 $rf = @(if (Test-Path -LiteralPath $release) { Get-ChildItem -LiteralPath $release -Force | ForEach-Object { $_.Name } })
-Assert-Condition ((($rf.Count -eq 0) -or (($rf -join ',') -eq 'AntigravityDNS.exe')) -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'portable'))) 'T14_P01' 'release\ holds only AntigravityDNS.exe and there is no portable\ folder' 'R10-PKG' -FailureMessage ('found: ' + ($rf -join ', '))
+Assert-Condition ((($rf.Count -eq 0) -or (@($rf | Where-Object { $_ -notin 'AntigravityGeminiDns.exe','AntigravityDNS.exe' }).Count -eq 0)) -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'portable'))) 'T14_P01' 'release\ holds only this product''s exe and there is no portable\ folder' 'R10-PKG' -FailureMessage ('found: ' + ($rf -join ', '))
 
 # T14_P02: package-release.ps1 checks the published exe against the build and its version, points the shortcut at it and never closes a process
 $pk = Get-Content -LiteralPath (Join-Path $projectRoot 'tools\package-release.ps1') -Raw -Encoding UTF8
-Assert-Condition (($pk -match "\`$bad\+='release exe'") -and ($pk -match "\`$bad\+='release version'") -and ($pk -match "'AntigravityDNS\.exe'") -and ($pk -match 'exit 1') -and ($pk -notmatch 'Stop-Process|taskkill')) 'T14_P02' 'package-release.ps1 verifies the one published exe and never closes a process' 'R10-PKG'
+Assert-Condition ($pk.Contains('Invoke-BoundedProcess') -and $pk.Contains('$probe.Stdout.Trim() -ne $csv') -and $pk.Contains('release\AntigravityGeminiDns.exe') -and $pk.Contains('Get-FileHash -LiteralPath $dst') -and $pk.Contains('Copied candidate hash mismatch') -and $pk.Contains('Destination changed after planning') -and ($pk -match 'exit 1') -and ($pk -notmatch 'Stop-Process|taskkill')) 'T14_P02' 'package-release verifies version, exact destination/hash and unchanged plan without closing user processes' 'R10-PKG'
 
 Assert-HostSafetyBaselineUnchanged "Tier 14 Completion"
 Write-Host "--- Tier 14 Completed ---" -ForegroundColor Cyan

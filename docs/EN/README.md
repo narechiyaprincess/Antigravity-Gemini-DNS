@@ -1,68 +1,41 @@
-[🇷🇺 Русский](../../README.md) • 🇬🇧 English
+# Antigravity-Gemini DNS
 
-# Antigravity DNS
+A Windows DNS/DoH bridge for **Antigravity, Gemini and selected Google services**. It checks providers and creates name-resolution rules for the selected services. Portable EXE with Russian and English UI.
 
-**A Windows DNS bridge for Antigravity, Gemini Desktop, and Google services.**
+**[Download the latest release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest)** · [Русский](../../README.md) · [Changelog](../../CHANGELOG.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square)](#installation)
-[![CI](https://github.com/narechiyaprincess/Antigravity-DNS/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/narechiyaprincess/Antigravity-DNS/actions/workflows/ci.yml)
-[![MIT](https://img.shields.io/github/license/narechiyaprincess/Antigravity-DNS?style=flat-square)](../../LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/narechiyaprincess/Antigravity-DNS?style=flat-square)](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest)
+These sources are prepared for **v1.1.0**. Until it is published, the download link points to the previous release; check its version. v1.1.0 targets Windows 11 x64 with Windows PowerShell 5.1 and working CIM/WMI. The runtime is included; no separate .NET installation is needed to run it. The EXE is unsigned.
 
-Test DNS/DoH providers, choose a working profile, and configure Windows to reach selected domains through the provider's DNS/SNI proxy. A single portable executable with Russian and English UI.
+## Quick start
 
-[Latest Release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest) · [Issues](https://github.com/narechiyaprincess/Antigravity-DNS/issues) · [Telegram](https://t.me/sexelysium) · [Build](../BUILDING.md)
+1. Download the EXE from Releases, compare its SHA-256 with `SHA256SUMS.txt`, and keep it in a permanent folder.
+2. **Before upgrading from 1.0.0, disconnect the bridge with the old version, confirm restoration, and close it.** Then start 1.1.0. Do not run both versions together.
+3. Select the services and provider in Bridge. Optionally run Benchmark and choose a working profile.
+4. Connect, confirm provider trust and approve Windows UAC. If direct access works, the app may leave DNS policy unchanged.
+5. Check the actual service. Disconnect / Restore with UAC to undo changes. Closing the window or quitting the tray does not restore DNS.
 
-<p>
-  <img src="../../assets/screenshots/bridge.png" width="320" alt="Bridge: provider profile and scope selection">
-  <img src="../../assets/screenshots/benchmark.png" width="320" alt="Provider test: availability, median, P95, and TLS timings">
-</p>
+## Features and changes
 
-*Measurement results depend on your network.*
+Independent service selection, built-in and custom DoH profiles, availability/latency measurements, fresh-result ranking, history, ownership-aware restoration, Doctor diagnostics, preference import/export, and local support-report preview.
 
-## Features
+v1.1.0 reworks connection coordination and service selection, adds direct-first and Doctor, strengthens freshness and system-setting ownership checks, updates profiles and polishes the UI. RU/EN, tray, ordinary autostart, custom DoH, benchmarking and basic restoration already existed in 1.0.0. See [v1.1.0 notes](../RELEASE-NOTES-1.1.0-EN.md).
 
-- Automatic tests of built-in DNS/DoH profiles: availability, latency, median, P95, and TLS; ranked results and best-profile selection.
-- **Antigravity**, **+ Gemini Desktop**, and **+ Browser** scopes for Google domains; custom DoH profiles.
-- Preflight checks, an ownership journal, and restoration that preserves shared entries and entries owned by other software.
-- System tray, login autostart, notifications, logs, measurement and operation history, and support reports.
+## Trust and limitations
 
-## How it works
+The bridge uses Windows NRPT and DoH for catalog domains. A SmartDNS provider may return its SNI proxy addresses. The third-party provider receives selected-service DNS queries and may relay their traffic. DoH encrypts DNS queries to that provider; the app does not tunnel all computer traffic.
 
-1. **Measure** — test the providers on your network.
-2. **Select** — compare results or choose “Pick the best”.
-3. **Connect** — confirm the provider and approve UAC, then open your application.
+One consent covers built-in catalog providers; custom DoH requires separate consent for its endpoint and selected services. Consent can be revoked in Settings. TLS certificate checks remain enabled. Connection and restoration need administrator rights; an ordinary process does not trigger background UAC for automatic repair.
 
-Antigravity DNS is not a VPN and does not tunnel all traffic. It applies DNS rules for selected domains without rewriting adapter DNS, `hosts`, or the system proxy.
+- This is not a VPN. Successful DNS/TLS checks do not guarantee login, account/model access or service availability.
+- VPN/TUN, corporate policy and browser Secure DNS may bypass the Windows resolver; the app does not rewrite their settings.
+- Windows 10, ARM64 and clean Windows without the development environment remain unverified. Windows may warn about the unsigned EXE.
+- Two P2 limitations remain: secondary-adapter changes can conservatively refuse an operation; the normal coordinator does not use its result-confirmation shortcut. No 6–8 second connection speedup is claimed.
+- Before upgrading or downgrading, disconnect using the version that created the bridge. Keep `state.json`; do not clear NRPT manually. [Compatibility](../COMPATIBILITY-IDENTIFIERS.md).
 
-## Installation
+## Help and development
 
-Requires **Windows 11 x64**, native DoH, and Windows PowerShell 5.1. Administrator rights are required to connect and restore. The EXE includes its .NET runtime; no installer is needed. Windows 10 compatibility is unverified.
+Run Doctor and read Logs when a service fails. Preview and redact support reports before sharing. [Troubleshooting](TROUBLESHOOTING.md) · [Report a bug](https://github.com/narechiyaprincess/Antigravity-DNS/issues/new/choose) · [Security](../../SECURITY.md).
 
-Download the EXE from the [latest Release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest), compare its SHA-256 with the release checksum, and run it from a permanent folder.
+[Build and offline checks](../BUILDING.md) · [Architecture](TECHNICAL.md) · [Release process](../RELEASING.md) · [Contributing](../../CONTRIBUTING.md) · [Attribution](../ATTRIBUTION.md).
 
-## Usage
-
-Open **Test → Measure**, then choose **Pick the best** or select a profile manually. On **Bridge**, choose a scope and select **Connect bridge**. Selecting a profile alone does not connect it.
-
-**+ Gemini Desktop** adds Gemini domains; **+ Browser** extends coverage to Google domains. Custom DoH and autostart are in **Settings**. Use **Disconnect / Restore** to remove the bridge; closing the window or exiting the tray leaves its rules in place.
-
-## Notes
-
-- The provider handles DNS queries and supplies the SNI proxy. TLS checks do not replace trust in that provider; passing a test cannot guarantee account access or a model response.
-- Browser Secure DNS and VPN/TUN routing can bypass the system resolver. The app does not rewrite browser settings.
-- See [domains, security, local data, and troubleshooting](TECHNICAL.md). Review the support-report preview before sharing it.
-
-If the bridge or a service fails, see [Troubleshooting](TROUBLESHOOTING.md). Follow [SECURITY.md](../../SECURITY.md) for suspected vulnerabilities without posting public details.
-
-## Development
-
-C# WinForms and PowerShell, with the provider catalog and engine embedded in the EXE. Application source, offline tests, and tooling live in `src/`. See [BUILDING.md](../BUILDING.md) for build and verification commands and packaging limitations.
-
-[Contributing](../../CONTRIBUTING.md) · [Changelog](../../CHANGELOG.md) · [Release preparation](../RELEASING.md). CI checks the build, self-test, embedded scripts, mocked engine tests, and offline tier 14; full local verification and live checks are documented separately.
-
-## License and links
-
-[MIT](../../LICENSE) · [Source](https://github.com/narechiyaprincess/Antigravity-DNS) · [Open Antigravity Patcher](https://sourceforge.net/projects/open-antigravity-patcher/)
-
-The patcher is an independent project linked from the app. Antigravity DNS is not an official Google project.
+[MIT license](../../LICENSE), without warranty. The project does not control third-party providers or service availability.

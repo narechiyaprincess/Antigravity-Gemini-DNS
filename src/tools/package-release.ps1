@@ -1,70 +1,79 @@
-﻿param(
- [string]$ExePath='',
- [switch]$WhatIf
-)
-# Copies the verified build to release\AntigravityDNS.exe and updates the shortcut
-# "Открыть Antigravity DNS.lnk" in the project root, which opens it. The build output keeps the assembly name AntigravityDnsUnlocker.exe;
-# nothing in the program depends on its file name. Afterwards the published file is checked: the same SHA-256 as the build and the .csproj version; any mismatch -> exit 1.
-# No process is closed. A running copy keeps its file locked, but Windows lets a running exe be renamed: such a file (and anything else in release\)
-# is moved to src\.work\replaced\ instead of being deleted, and removed there on a later run once nobody holds it.
-# This file is saved with a BOM: Windows PowerShell 5.1 mangles non-ASCII text in a script without one.
+﻿[CmdletBinding()]
+param([string]$ExePath='', [switch]$WhatIf, [string]$ProjectRoot='', [string]$ReceiptPath='')
+# Local replacement only: exact EXE + exact shortcut. Historical/unknown files and backups are never swept.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'BoundedProcess.ps1')
 $src=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$repo=(Resolve-Path (Join-Path $src '..')).Path
-if(-not $ExePath){$ExePath=Join-Path $src '.work\build\AntigravityDnsUnlocker.exe'}
-$exe=(Resolve-Path -LiteralPath $ExePath).Path
-$csv=[regex]::Match((Get-Content -LiteralPath (Join-Path $src 'app\AntigravityDnsUnlocker.csproj') -Raw),'<Version>([^<]+)</Version>').Groups[1].Value
-$ver=(& $exe --version | Select-Object -First 1).Trim()
-if($ver -ne $csv){throw "version mismatch: the exe reports '$ver', the .csproj says '$csv'"}
-$hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
-$rel=Join-Path $repo 'release'
-$name='AntigravityDNS.exe'
-$dst=Join-Path $rel $name
-$aside=Join-Path $src '.work\replaced'
-$lnk=Join-Path $repo 'Открыть Antigravity DNS.lnk'
-"release build: $exe"
-"  version $ver  sha256 $hash"
-if($WhatIf){"WhatIf: would put it at $dst and point '$lnk' at it";return}
-
-function MoveAside([string]$path){
- New-Item -ItemType Directory -Force $aside|Out-Null
- $leaf=Split-Path -Leaf $path
- $to=Join-Path $aside ([IO.Path]::GetFileNameWithoutExtension($leaf)+'.old-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,6)+[IO.Path]::GetExtension($leaf))
- Move-Item -LiteralPath $path -Destination $to -Force
- "  moved aside: $leaf -> src\.work\replaced\$(Split-Path -Leaf $to)"
-}
-
-# leftovers of earlier swaps: removed once nobody holds them
-if(Test-Path -LiteralPath $aside){Get-ChildItem -LiteralPath $aside -Force|ForEach-Object{try{Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop}catch{}}}
-New-Item -ItemType Directory -Force $rel|Out-Null
-# release\ holds only the exe
-Get-ChildItem -LiteralPath $rel -Force|Where-Object{$_.Name -ne $name}|ForEach-Object{MoveAside $_.FullName}
-if(-not ((Test-Path -LiteralPath $dst) -and ((Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash -eq $hash))){
- try{Copy-Item -LiteralPath $exe -Destination $dst -Force -ErrorAction Stop}
- catch{
-  MoveAside $dst
-  Copy-Item -LiteralPath $exe -Destination $dst -Force
-  "  the previous $name was running: it keeps working until it is closed from its tray menu (Выход); open the program again to get this build"
+$repo=if($ProjectRoot){(Resolve-Path -LiteralPath $ProjectRoot).Path}else{(Resolve-Path (Join-Path $src '..')).Path}
+if(-not $ExePath){$ExePath=Join-Path $src '.work\build\AntigravityGeminiDns.exe'}
+$runId=[guid]::NewGuid().ToString('N')
+if(-not $ReceiptPath){$ReceiptPath=Join-Path $repo ('.package-receipts\'+$runId+'.json')}
+$ReceiptPath=[IO.Path]::GetFullPath($ReceiptPath)
+if(Test-Path -LiteralPath $ReceiptPath){throw 'Receipt already exists; preserve prior evidence'}
+[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($ReceiptPath))|Out-Null
+$dst=Join-Path $repo 'release\AntigravityGeminiDns.exe'
+$lnk=Join-Path $repo 'Открыть Antigravity-Gemini DNS.lnk'
+$backup=Join-Path $repo ('.package-backups\'+$runId)
+$receipt=[ordered]@{Status='FAIL';DryRun=[bool]$WhatIf;TimestampUtc=[DateTime]::UtcNow.ToString('o');Source=$ExePath;SourceSHA256=$null;Plan=@();Actions=@();Rollback=@();Error=$null}
+$mutated=@();$preimages=@{}
+function Assert-Scope([string]$path){
+ $full=[IO.Path]::GetFullPath($path)
+ if(-not $full.StartsWith($repo.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){throw ('OUT_OF_SCOPE: '+$full)}
+ $cursor=$full
+ while($cursor -and $cursor.Length -ge $repo.Length){
+  if((Test-Path -LiteralPath $cursor) -and ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw ('REPARSE_POINT: '+$cursor)}
+  $cursor=[IO.Path]::GetDirectoryName($cursor)
  }
+ return $full
 }
-
-# the shortcut always opens release\AntigravityDNS.exe; shortcuts of earlier names go
-$ws=New-Object -ComObject WScript.Shell
-$s=$ws.CreateShortcut($lnk)
-$s.TargetPath=$dst;$s.WorkingDirectory=$rel;$s.IconLocation=$dst+',0';$s.Description='Antigravity DNS';$s.Save()
-Get-ChildItem -LiteralPath $repo -Filter '*.lnk' -Force|Where-Object{$_.Name -ne (Split-Path -Leaf $lnk) -and $_.Name -like 'Открыть *DNS.lnk'}|ForEach-Object{Remove-Item -LiteralPath $_.FullName -Force;"  removed old shortcut: $($_.Name)"}
-
-# the checks
-$bad=@()
-if((Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash -ne $hash){$bad+='release exe'}
-$relVer=(& $dst --version | Select-Object -First 1).Trim()
-if($relVer -ne $csv){$bad+='release version'}
-$target=$ws.CreateShortcut($lnk).TargetPath
-if($target -ne $dst){$bad+=('shortcut -> '+$target)}
-"sha256        $hash  release\$name"
-"version       $relVer"
-"shortcut      $lnk -> $target"
-$running=@(Get-Process -Name AntigravityDNS,AntigravityDnsUnlocker -ErrorAction SilentlyContinue)
-if($running.Count -gt 0){"note: $($running.Count) copy of the program is running now; it keeps the build it was started from until it is closed (tray menu -> Выход)"}
-if($bad.Count -gt 0){"PACKAGE FAIL: "+($bad -join '; ');exit 1}
-"PACKAGE PASS: release\$name is $ver, sha256 $hash"
+try{
+ $exe=(Resolve-Path -LiteralPath $ExePath).Path
+ if($exe -ieq $dst){throw 'Source must differ from replacement destination'}
+ $csv=[regex]::Match((Get-Content -LiteralPath (Join-Path $src 'app\AntigravityGeminiDns.csproj') -Raw),'<Version>([^<]+)</Version>').Groups[1].Value
+ $probe=Invoke-BoundedProcess -FilePath $exe -Arguments '--version' -TimeoutMilliseconds 30000
+ if($probe.ExitCode -ne 0 -or $probe.Stdout.Trim() -ne $csv){throw 'Candidate version probe failed'}
+ $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash;$receipt.SourceSHA256=$hash
+ foreach($path in @($dst,$lnk)){
+  [void](Assert-Scope $path)
+  $prior=if(Test-Path -LiteralPath $path){(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}else{$null}
+  $receipt.Plan+=@{Action='ReplaceExactFile';Path=$path;PreimageSHA256=$prior;Backup=(Join-Path $backup ([IO.Path]::GetFileName($path)))}
+ }
+ $receipt.Status='PLANNED'
+ $receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $ReceiptPath -Encoding UTF8
+ if($WhatIf){$receipt.Status='DRY_RUN';Write-Output 'PACKAGE_DRY_RUN: only receipt written; destinations and backups untouched'}else{
+  [void](Assert-Scope $backup);[IO.Directory]::CreateDirectory($backup)|Out-Null
+  # Capture all preimages before the first destination mutation.
+  foreach($entry in $receipt.Plan){
+   [void](Assert-Scope $entry.Path)
+   $current=if(Test-Path -LiteralPath $entry.Path){(Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash}else{$null}
+   if($current -ne $entry.PreimageSHA256){throw 'Destination changed after planning'}
+   if($current){[IO.File]::Copy($entry.Path,$entry.Backup,$false);$preimages[$entry.Path]=$entry.Backup}
+  }
+  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dst))|Out-Null
+  [void](Assert-Scope $dst);$mutated+=,$dst
+  [IO.File]::Copy($exe,$dst,$true);$receipt.Actions+=@{Action='ReplaceExactFile';Path=$dst}
+  if((Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash -ne $hash){throw 'Copied candidate hash mismatch'}
+  $ws=New-Object -ComObject WScript.Shell
+  $tempLink=Join-Path $backup 'candidate-shortcut.lnk'
+  $shortcut=$ws.CreateShortcut($tempLink);$shortcut.TargetPath=$dst;$shortcut.WorkingDirectory=[IO.Path]::GetDirectoryName($dst);$shortcut.IconLocation=$dst+',0';$shortcut.Description='Antigravity-Gemini DNS';$shortcut.Save()
+  [void](Assert-Scope $lnk);$mutated+=,$lnk
+  [IO.File]::Copy($tempLink,$lnk,$true);$receipt.Actions+=@{Action='ReplaceExactFile';Path=$lnk}
+  if($ws.CreateShortcut($lnk).TargetPath -ine $dst){throw 'Shortcut target mismatch'}
+  $receipt.Status='PASS';Write-Output ('PACKAGE_PASS '+$dst+' SHA256 '+$hash)
+ }
+}catch{
+ $receipt.Status='FAIL'
+ $receipt.Error=$_.Exception.Message
+ foreach($path in $mutated){
+  try{
+   [void](Assert-Scope $path)
+   if($preimages.ContainsKey($path)){[IO.File]::Copy($preimages[$path],$path,$true);$receipt.Rollback+=@{Path=$path;Status='RESTORED'}}
+   elseif([IO.File]::Exists($path)){[IO.File]::Delete($path);$receipt.Rollback+=@{Path=$path;Status='REMOVED_OWN_NEW_FILE'}}
+  }catch{$receipt.Rollback+=@{Path=$path;Status='FAILED';Error=$_.Exception.Message}}
+ }
+ Write-Error -ErrorAction Continue $receipt.Error
+}finally{
+ $receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $ReceiptPath -Encoding UTF8
+ Write-Output ('Receipt: '+$ReceiptPath)
+}
+if($receipt.Status -eq 'FAIL'){exit 1}

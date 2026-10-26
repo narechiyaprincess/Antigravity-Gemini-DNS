@@ -29,9 +29,10 @@ Assert-Condition ($mf -notmatch 'Автозапуск указывает на д
 $tog = Get-Block $mf 'void OnAutostartToggled\(\)\{.*?\n  \}'
 Assert-Condition ($tog -match 'EnableForCurrent\(exe' -and $tog -notmatch 'MessageBox\.Show\(this,L\.T\("(Программа|Автозапуск Windows)') 'T13_A03' 'Turning autostart on names the running exe and asks nothing (the only message box is the failure of the registry write)' 'R-UIV4'
 $setTrue = [regex]::Matches($allSrc, 'SetEnabled\(true').Count
-Assert-Condition ($setTrue -le 3 -and $prog -match 'public static bool RepointIfMissing' -and $mf -match 'RepointIfMissing\(Environment\.ProcessPath\)') 'T13_A04' 'Autostart is switched on only by the switch (EnableForCurrent) or to repair an entry whose file is gone (RepointIfMissing)' 'R-UIV4'
+$repointCalls = [regex]::Matches($allSrc, '(?m)^[^\r\n]*\bRepointIfMissing\s*\(') | Where-Object { $_.Value -notmatch 'public static bool RepointIfMissing\s*\(' -and $_.Value -notmatch '^\s*//' }
+Assert-Condition ($setTrue -eq 4 -and @($repointCalls).Count -eq 1 -and $mf -match 'if\(!smoke\)AutostartHelper.RepointIfMissing' -and $mf -match 'AutostartHelper.RebindOwnCopy\(Environment.ProcessPath\)' -and $prog -match 'File.Exists\(target\)' -and $prog -match '!Directory.Exists\(root\)' -and $tog -match 'EnableForCurrent\(exe' -and $tog -match 'if\(autostartUpdating\)return;') 'T13_A04' 'Normal launch repairs a missing registered EXE on an available drive and silently rebinds an entry that names another copy of this same program (foreign exes and absent registrations remain untouched); explicit Settings toggle registers current EXE' 'R-UIV4'
 $rm = Get-Block $prog 'public static CopyRemoval RemovePreviousCopy.*?\n  \}'
-Assert-Condition ($rm -match 'ProductOf' -and $rm -match 'IsRunning' -and $rm -match 'ThisCopy' -and $rm -match 'File\.Delete\(path\)' -and ([regex]::Matches($allSrc,'File\.Delete\(').Count -le 6)) 'T13_A05' 'A previous copy is deleted only after the ProductName, not-running and not-this-exe checks' 'R-UIV4'
+Assert-Condition ($rm -match 'ProductOf' -and $rm -match 'IsRunning' -and $rm -match 'ThisCopy' -and $rm -match 'File\.Delete\(path\)' -and ([regex]::Matches($allSrc,'File\.Delete\(').Count -le 10 -and $allSrc -match 'File\.Delete\(InstalledExe\)')) 'T13_A05' 'A previous copy is deleted only after the ProductName, not-running and not-this-exe checks (the other File.Delete calls belong to the protected administrator-startup copy and its temp files)' 'R-UIV4'
 Assert-Condition ($mf -match 'DeleteConfirm!=null\?DeleteConfirm\(path\):MessageBox\.Show' -and $mf -match 'prevDelete') 'T13_A06' 'Deleting a previous copy is behind a confirmation' 'R-UIV4'
 
 # B: levels
@@ -55,7 +56,7 @@ Assert-Condition ($lang -match 'public static string Swap\(string text,bool toEn
 
 # F: tab bar
 $nav = Get-Block $ui 'internal sealed class NavBar:Surface\{.*'
-Assert-Condition ($nav -match 'internal static Rectangle Pill\(' -and $nav -match 'internal static void Paint\(' -and $nav -notmatch 'w-12\*k' -and $nav -match 'NoClipping') 'T13_F01' 'The tab bar highlight comes from one function: whole pixels, centred on the cell, the same size for every tab' 'R-UIV4'
+Assert-Condition ($nav -match 'internal static Rectangle Pill\(' -and $nav -match 'internal (?:new )?static void Paint\(' -and $nav -notmatch 'w-12\*k' -and $nav -match 'NoClipping') 'T13_F01' 'The tab bar highlight comes from one function: connected full-height sectors with a shared paint path' 'R-UIV4'
 
 Assert-HostSafetyBaselineUnchanged "Tier 13 Completion"
 Write-Host "--- Tier 13 Completed: $($global:TestResults.Count) Tests Run ---" -ForegroundColor Cyan

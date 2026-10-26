@@ -12,7 +12,7 @@ Run from the repository root:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify-ci.ps1
 ```
 
-This builds the portable EXE and runs its self-test, embedded-script verification, mocked engine tests, and offline tier 14. It is the same technical gate used in Actions. For the full local gate (tiers 5–14, UI, RU/EN DPI checks, and standalone EXE checks):
+This builds the portable EXE and runs its self-test, embedded-script verification, mocked engine tests, and offline tier 14. It is the same technical gate used in Actions. For the full local gate (tiers 1–15, UI, RU/EN DPI checks, and standalone EXE checks):
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\tools\verify.ps1 -Tag contribution -NoPublish
@@ -24,7 +24,7 @@ For a build alone:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\app\Build.ps1
 ```
 
-Build output is `src/.work/build/AntigravityDnsUnlocker.exe`; logs and receipts stay under `src/.work/`. Pass `-Dotnet` to the build/verification scripts, or use `AGDNS_DOTNET` with the verification wrappers, if the SDK is outside PATH. See [BUILDING.md](docs/BUILDING.md) for individual tiers, limitations, packaging, and the distinction between local and hosted checks.
+Build output is `src/.work/build/AntigravityGeminiDns.exe`; logs and receipts stay under `src/.work/`. Pass `-Dotnet` to the build/verification scripts, or use `AGDNS_DOTNET` with the verification wrappers, if the SDK is outside PATH. See [BUILDING.md](docs/BUILDING.md) for individual tiers, limitations, packaging, and the distinction between local and hosted checks.
 
 Offline tests use synthetic responses, temporary files, loopback networking, and the disposable `HKCU:\Software\AgDnsTest` namespace. Do not put personal data in that namespace. They check that live DNS policy, the ownership journal, and real autostart stay unchanged. Do not run live integration, connect, restore, or provider benchmarks as ordinary CI checks.
 

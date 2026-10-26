@@ -1,15 +1,14 @@
-name: Release artifacts
+# Manual source verification only. Approved release assets are uploaded separately.
+name: Release source verification
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  package:
+  verify:
     runs-on: windows-2025
     timeout-minutes: 20
     defaults:
@@ -19,52 +18,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require a version tag matching the project
-        env:
-          RELEASE_REF_TYPE: ${{ github.ref_type }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          if ($env:RELEASE_REF_TYPE -ne 'tag' -or $env:RELEASE_TAG -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
-            throw 'Select a vX.Y.Z tag; branch builds and prerelease tags are not release candidates.'
-          }
-          $project = [xml](Get-Content .\src\app\AntigravityDnsUnlocker.csproj -Raw)
-          if ($env:RELEASE_TAG -ne ('v' + $project.Project.PropertyGroup.Version)) {
-            throw 'Tag does not match the project Version.'
-          }
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-      - name: Build and verify the tagged source
+      - name: Build and run offline checks (no release publication)
         run: .\src\tools\verify-ci.ps1
-      - name: Stage the portable EXE and checksums
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          SOURCE_COMMIT: ${{ github.sha }}
-        run: |
-          $out = New-Item -ItemType Directory -Path .\src\.work\release-artifact
-          $asset = 'Antigravity-DNS-' + $env:RELEASE_TAG + '-win-x64.exe'
-          Copy-Item -LiteralPath .\src\.work\build\AntigravityDnsUnlocker.exe -Destination (Join-Path $out.FullName $asset)
-          $utf8 = New-Object Text.UTF8Encoding($false)
-          $info = "Tag: $env:RELEASE_TAG`nCommit: $env:SOURCE_COMMIT`nSDK: $(dotnet --version)`nOS: $([Environment]::OSVersion.VersionString)`n"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not record the SDK version.' }
-          [IO.File]::WriteAllText((Join-Path $out.FullName 'BUILDINFO.txt'), $info, $utf8)
-          $sums = @($asset, 'BUILDINFO.txt') | ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath (Join-Path $out.FullName $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $_"
-          }
-          [IO.File]::WriteAllText((Join-Path $out.FullName 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"), $utf8)
-      - name: Upload release candidate (no GitHub Release is created)
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: Antigravity-DNS-${{ github.ref_name }}-win-x64
-          path: src/.work/release-artifact/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload verification logs
+      - name: Upload verification logs only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-verification
+          name: release-source-verification
           path: |
             src/.work/logs/ci/
             src/.work/offline_e2e_receipt.json

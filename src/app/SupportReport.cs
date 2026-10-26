@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // What must never leave the computer inside a support report. Values come from the machine (live) or from a test.
  public sealed class RedactionContext {
   public string UserName,MachineName,DomainName,ProfileDir;
@@ -32,9 +32,10 @@ namespace AgDns {
   public DateTime GeneratedUtc;public string ExeVersion,CatalogVersion,CatalogUpdated,Os;
   public string JournalPhase,Profile;public string HealthKind,HealthCode,HealthUtc;
   public OperationEntry[] Operations=new OperationEntry[0];
-  public bool CustomProfile;       // a profile the person entered: its name, host and addresses stay out of the report
+  public bool CustomProfile;       // a profile the user entered: its name, host and addresses stay out of the report
   public string DiagnosisJson;     // the engine's `diagnose` output, or null when it was not run / failed
   public string DiagnosisCode;
+  public string DoctorText;        // Doctor.ToText() of this run, or null when Doctor was not run
  }
 
  // Bounded local history of operations (code only, never output text): %LocalAppData%\AntigravityDnsUnlocker\operations.json, the last MaxEntries entries.
@@ -43,7 +44,7 @@ namespace AgDns {
   readonly string path;readonly object gate=new object();
   static readonly JsonSerializerOptions Json=new JsonSerializerOptions{WriteIndented=true,IncludeFields=true};
   public OperationHistory(string path=null){this.path=path??DefaultPath;}
-  public static string DefaultPath=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AntigravityDnsUnlocker","operations.json");
+  public static string DefaultPath=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),AppIdentity.StorageName,"operations.json");
   static string Clip(string s,int n)=>s==null?"":(s.Length>n?s.Substring(0,n):s);
 
   public OperationEntry[] Load() {
@@ -88,7 +89,7 @@ namespace AgDns {
    string Sent(string tag)=>"\uE000"+Array.IndexOf(Tags,tag)+"\uE001";
    string result=Mask(text);
 
-   // 1. Whole folders first, longest first: the profile folder, redirected personal folders. Whatever follows the folder stays (the file name is useful, the person is not).
+   // 1. Whole folders first, longest first: the profile folder, redirected personal folders. Whatever follows the folder stays (the file name is useful, the user is not).
    var folders=new List<(string Value,string Tag)>();
    if(!string.IsNullOrWhiteSpace(ctx.ProfileDir))folders.Add((ctx.ProfileDir,ProfileTag));
    foreach(string p in ctx.ExtraPaths??new string[0])if(!string.IsNullOrWhiteSpace(p))folders.Add((p,PathTag));
@@ -138,59 +139,63 @@ namespace AgDns {
   // The report text before redaction. Codes and versions only; the diagnosis is summarised, not pasted.
   public static string Build(ReportInput r) {
    var sb=new StringBuilder();
-   sb.AppendLine("Отчёт для поддержки — Antigravity DNS");
-   sb.AppendLine("Создан локально; никуда не отправляется. Имя пользователя, имя компьютера, личные папки и имена сетей вырезаны.");
+   sb.AppendLine(L.T("Отчёт для поддержки — Antigravity-Gemini DNS"));
+   sb.AppendLine(L.T("Создан локально; никуда не отправляется. Имя пользователя, имя компьютера, личные папки и имена сетей вырезаны."));
    sb.AppendLine();
-   sb.AppendLine("== Программа ==");
-   sb.AppendLine(Row("Версия EXE:",r.ExeVersion));
-   sb.AppendLine(Row("Версия каталога:",r.CatalogVersion+(string.IsNullOrWhiteSpace(r.CatalogUpdated)?"":" (от "+r.CatalogUpdated+")")));
+   sb.AppendLine(L.T("== Программа =="));
+   sb.AppendLine(Row(L.T("Версия EXE:"),r.ExeVersion));
+   sb.AppendLine(Row(L.T("Версия каталога:"),r.CatalogVersion+(string.IsNullOrWhiteSpace(r.CatalogUpdated)?"":L.T(" (от ")+r.CatalogUpdated+")")));
    sb.AppendLine(Row("Windows:",r.Os));
-   sb.AppendLine(Row("Создан (UTC):",r.GeneratedUtc.ToString("yyyy-MM-dd HH:mm")));
+   sb.AppendLine(Row(L.T("Создан (UTC):"),r.GeneratedUtc.ToString("yyyy-MM-dd HH:mm")));
    sb.AppendLine();
-   sb.AppendLine("== Состояние ==");
-   sb.AppendLine(Row("Журнал:",r.JournalPhase));
-   sb.AppendLine(Row("Профиль:",r.Profile));
-   sb.AppendLine(Row("Проверка моста:",string.IsNullOrWhiteSpace(r.HealthKind)?null:r.HealthKind+(string.IsNullOrWhiteSpace(r.HealthCode)?"":" / "+r.HealthCode)+(string.IsNullOrWhiteSpace(r.HealthUtc)?"":" ("+r.HealthUtc+")")));
+   sb.AppendLine(L.T("== Состояние =="));
+   sb.AppendLine(Row(L.T("Журнал:"),r.JournalPhase));
+   sb.AppendLine(Row(L.T("Профиль:"),r.Profile));
+   sb.AppendLine(Row(L.T("Проверка моста:"),string.IsNullOrWhiteSpace(r.HealthKind)?null:r.HealthKind+(string.IsNullOrWhiteSpace(r.HealthCode)?"":" / "+r.HealthCode)+(string.IsNullOrWhiteSpace(r.HealthUtc)?"":" ("+r.HealthUtc+")")));
    sb.AppendLine();
-   sb.AppendLine("== Последние операции (не больше "+ReportOperations+", новые внизу) ==");
+   sb.AppendLine(L.T("== Последние операции (не больше ")+ReportOperations+L.T(", новые внизу) =="));
    var ops=(r.Operations??new OperationEntry[0]).Skip(Math.Max(0,(r.Operations??new OperationEntry[0]).Length-ReportOperations)).ToArray();
-   if(ops.Length==0)sb.AppendLine("  (нет записей)");
+   if(ops.Length==0)sb.AppendLine(L.T("  (нет записей)"));
    foreach(var o in ops)sb.AppendLine("  "+(o.Utc??"?")+"  "+(o.Action??"?").PadRight(10)+(o.Ok?"ok  ":"FAIL")+"  "+(o.Code??"")+(string.IsNullOrWhiteSpace(o.Profile)?"":"  ["+o.Profile+"]"));
    sb.AppendLine();
-   sb.AppendLine("== Диагностика ==");
+   sb.AppendLine(L.T("== Диагностика =="));
    AppendDiagnosis(sb,r);
+   // Doctor layers (Doctor.ToText): the first failed layer is where the problem is; Prepare() redacts this text like the rest
+   sb.AppendLine();
+   sb.AppendLine(L.T("== Самодиагностика по слоям =="));
+   sb.AppendLine(string.IsNullOrWhiteSpace(r.DoctorText)?L.T("  не выполнена"):r.DoctorText.TrimEnd());
    return sb.ToString();
   }
 
   static void AppendDiagnosis(StringBuilder sb,ReportInput r) {
-   if(string.IsNullOrWhiteSpace(r.DiagnosisJson)){sb.AppendLine("  Диагностика не выполнена"+(string.IsNullOrWhiteSpace(r.DiagnosisCode)?"":" (код: "+r.DiagnosisCode+")")+".");return;}
+   if(string.IsNullOrWhiteSpace(r.DiagnosisJson)){sb.AppendLine(L.T("  Диагностика не выполнена")+(string.IsNullOrWhiteSpace(r.DiagnosisCode)?"":L.T(" (код: ")+r.DiagnosisCode+")")+".");return;}
    try {
     using(var doc=JsonDocument.Parse(r.DiagnosisJson)) {
      var root=doc.RootElement;
      string S(JsonElement e,string n)=>e.ValueKind==JsonValueKind.Object&&e.TryGetProperty(n,out var v)?(v.ValueKind==JsonValueKind.String?v.GetString():v.ToString()):null;
      // A custom profile is recognised by the journal too: its "resolver" is the user's own DoH URL, whatever the profile list shows now.
      bool custom=r.CustomProfile||(root.TryGetProperty("Status",out var st0)&&(S(st0,"Resolver")??"").Contains("/"));
-     sb.AppendLine("  "+Row("Итог:",S(root,"State")+" / "+S(root,"Code")));
+     sb.AppendLine("  "+Row(L.T("Итог:"),S(root,"State")+" / "+S(root,"Code")));
      if(root.TryGetProperty("Status",out var st)&&st.ValueKind==JsonValueKind.Object) {
-      sb.AppendLine("  "+Row("Профиль:",custom?"свой профиль":S(st,"Resolver")));
-      sb.AppendLine("  "+Row("Протокол:",S(st,"Protocol")));
-      sb.AppendLine("  "+Row("Журнал:",S(st,"JournalPhase")));
-      if(st.TryGetProperty("Servers",out var sv)&&sv.ValueKind==JsonValueKind.Array)sb.AppendLine("  "+Row("Адреса провайдера:",custom?sv.GetArrayLength()+" шт. (скрыты: свой профиль)":string.Join(", ",sv.EnumerateArray().Select(x=>x.GetString()))));
+      sb.AppendLine("  "+Row(L.T("Профиль:"),custom?L.T("свой профиль"):S(st,"Resolver")));
+      sb.AppendLine("  "+Row(L.T("Протокол:"),S(st,"Protocol")));
+      sb.AppendLine("  "+Row(L.T("Журнал:"),S(st,"JournalPhase")));
+      if(st.TryGetProperty("Servers",out var sv)&&sv.ValueKind==JsonValueKind.Array)sb.AppendLine("  "+Row(L.T("Адреса провайдера:"),custom?sv.GetArrayLength()+L.T(" шт. (скрыты: свой профиль)"):string.Join(", ",sv.EnumerateArray().Select(x=>x.GetString()))));
      }
-     sb.AppendLine("  "+Row("NRPT и ответы Windows:",S(root,"NrptEffective")));
+     sb.AppendLine("  "+Row(L.T("NRPT и ответы Windows:"),S(root,"NrptEffective")));
      if(root.TryGetProperty("SystemResolver",out var sr)&&sr.ValueKind==JsonValueKind.Array)
       foreach(var h in sr.EnumerateArray()) {
        string a=h.TryGetProperty("A",out var av)&&av.ValueKind==JsonValueKind.Array?string.Join(", ",av.EnumerateArray().Select(x=>x.GetString())):"";
-       sb.AppendLine("  "+Row("Windows → "+S(h,"Host"),custom?(a.Length==0?"":"адреса скрыты: свой профиль"):a));
+       sb.AppendLine("  "+Row("Windows → "+S(h,"Host"),custom?(a.Length==0?"":L.T("адреса скрыты: свой профиль")):a));
       }
      if(root.TryGetProperty("Network",out var net)&&net.ValueKind==JsonValueKind.Object&&net.TryGetProperty("Candidates",out var cs)&&cs.ValueKind==JsonValueKind.Array)
-      foreach(var c in cs.EnumerateArray())sb.AppendLine("  "+Row("Провайдер "+(custom?"(свой профиль)":S(c,"Server"))+":","DoH "+(c.TryGetProperty("DohValidated",out var dv)&&dv.ValueKind==JsonValueKind.True?"ok":"нет")+"; TLS "+S(c,"DohTls")));
-     if(root.TryGetProperty("VpnPresent",out var vp)&&vp.ValueKind==JsonValueKind.Array)sb.AppendLine("  "+Row("VPN-адаптеры:",vp.GetArrayLength().ToString()));
+      foreach(var c in cs.EnumerateArray())sb.AppendLine("  "+Row(L.T("Провайдер ")+(custom?L.T("(свой профиль)"):S(c,"Server"))+":","DoH "+(c.TryGetProperty("DohValidated",out var dv)&&dv.ValueKind==JsonValueKind.True?"ok":L.T("нет"))+"; TLS "+S(c,"DohTls")));
+     if(root.TryGetProperty("VpnPresent",out var vp)&&vp.ValueKind==JsonValueKind.Array)sb.AppendLine("  "+Row(L.T("VPN-адаптеры:"),vp.GetArrayLength().ToString()));
     }
-   }catch{sb.AppendLine("  Ответ диагностики не удалось разобрать.");}
+   }catch{sb.AppendLine(L.T("  Ответ диагностики не удалось разобрать."));}
   }
 
-  // The text the person sees and saves: built, then redacted. Applying the redaction a second time changes nothing.
+  // The text the user sees and saves: built, then redacted. Applying the redaction a second time changes nothing.
   public static string Prepare(ReportInput input,RedactionContext ctx)=>Sanitize(Build(input),ctx);
  }
 }

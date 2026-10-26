@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  public sealed class TlsInfo {
   public bool Ok; public string Error; public string Protocol; public string Alpn; public string Subject; public string Issuer; public string NotAfter;
   public string PolicyErrors="None"; public long ConnectMs; public long HandshakeMs;
@@ -31,22 +31,27 @@ namespace AgDns {
       using(var ns=new NetworkStream(sock,false))
       using(var ssl=new SslStream(ns,false,(s,cert,chain,errors)=>{
        info.PolicyErrors=errors.ToString();
-       if(cert!=null){try{var c2=new X509Certificate2(cert);info.Subject=c2.Subject;info.Issuer=c2.Issuer;info.NotAfter=c2.NotAfter.ToUniversalTime().ToString("yyyy-MM-dd");}catch{}}
+       if(cert!=null){try{using var c2=new X509Certificate2(cert);info.Subject=c2.Subject;info.Issuer=c2.Issuer;info.NotAfter=c2.NotAfter.ToUniversalTime().ToString("yyyy-MM-dd");}catch{}}
        return errors==SslPolicyErrors.None;
       })) {
        var options=new SslClientAuthenticationOptions{TargetHost=sni,ApplicationProtocols=new List<SslApplicationProtocol>{SslApplicationProtocol.Http2,SslApplicationProtocol.Http11}};
        await ssl.AuthenticateAsClientAsync(options,cts.Token);
        info.HandshakeMs=sw.ElapsedMilliseconds;info.Ok=true;
-       // after the handshake, outside its time limit: an explicitly revoked certificate is refused (an unknown status is not a refusal; see CertRevocation)
+       // The OS revocation lookup is synchronous with a per-retrieval CertRevocation.Limit.
+       // Keep the probe's deadline while waiting and own the certificate copy if that lookup finishes after cancellation.
        var rc=ssl.RemoteCertificate;
-       if(rc!=null&&await Task.Run(()=>CertRevocation.IsRevoked(rc))){info.Ok=false;info.Error="CERT_REVOKED";}
+       if(rc!=null) {
+        var copy=new X509Certificate2(rc);
+        bool revoked=await Task.Run(()=>{using(copy)return CertRevocation.IsRevoked(copy);}).WaitAsync(cts.Token);
+        if(revoked){info.Ok=false;info.Error="CERT_REVOKED";}
+       }
        info.Protocol=ssl.SslProtocol.ToString();info.Alpn=ssl.NegotiatedApplicationProtocol.ToString();
       }
      }
     }
-    catch(OperationCanceledException) when(!ct.IsCancellationRequested){info.Error="TIMEOUT_"+timeoutMs+"ms";}
-    catch(OperationCanceledException){info.Error="CANCELLED";}
-    catch(Exception e){var inner=e;while(inner.InnerException!=null)inner=inner.InnerException;info.Error=inner.GetType().Name+": "+inner.Message;}
+    catch(OperationCanceledException) when(!ct.IsCancellationRequested){info.Ok=false;info.Error="TIMEOUT_"+timeoutMs+"ms";}
+    catch(OperationCanceledException){info.Ok=false;info.Error="CANCELLED";}
+    catch(Exception e){info.Ok=false;var inner=e;while(inner.InnerException!=null)inner=inner.InnerException;info.Error=inner.GetType().Name+": "+inner.Message;}
    }
    return info;
   }
@@ -84,7 +89,7 @@ namespace AgDns {
   };
   public const int PinsPerCatalogProvider=2;
   // Foreign resolvers are often cut off from Russia; the providers of the catalog are reachable by definition of the catalog, so they ask too (by their pins).
-  // The provider being bootstrapped is left out: its own pins are exactly what is dead.
+  // The provider being bootstrapped is left out: its own pins are the ones that are dead.
   public static DohResolver[] Resolvers(string host,ProfileCatalog catalog=null) {
    var list=new List<DohResolver>(Fixed);
    foreach(var p in (catalog??ProfileCatalog.BuiltIn).Profiles) {
@@ -109,7 +114,7 @@ namespace AgDns {
    }
   }
   public Task<TlsInfo> TlsOnName(string ip,int port,string host,CancellationToken ct)=>Probing.TlsAsync(ip,port,host,6000,ct);
-  public Task<Candidate[]> DohCandidates(string[] ips,string template,CancellationToken ct)=>Task.Run(()=>Program.NetworkCandidates(ips,template,false),ct);
+  public Task<Candidate[]> DohCandidates(string[] ips,string template,CancellationToken ct)=>Program.NetworkCandidates(ips,template,false,ct);
  }
 
  // Time limits of one bootstrap. The whole search never takes longer than Budget; the resolvers get Discovery of it, the rest is for the certificate and DoH checks.
@@ -117,13 +122,13 @@ namespace AgDns {
   public TimeSpan Budget=TimeSpan.FromSeconds(20);
   public TimeSpan Discovery=TimeSpan.FromSeconds(9);
  }
- // The budget ran out and not a single address had been validated: an honest refusal, not "no address passed".
+ // The budget ran out and not a single address had been validated: a refusal, not "no address passed".
  public sealed class BootstrapTimeoutException:Exception {
   public BootstrapTimeoutException(string message):base(message){}
  }
 
  // Safe bootstrap for a DoH provider that is known only by name: resolve the host, cross-check, validate TLS on the NAME,
- // then validate DoH + TLS for both Google domains. Only validated IPs are returned as pin candidates. Nothing is invented or applied.
+ // then validate DoH + TLS for both Google domains. Only validated IPs are returned as pin candidates. Nothing is applied here.
  public static class Bootstrap {
   public static bool TryParse(string input,out Uri uri) {
    uri=null;if(string.IsNullOrWhiteSpace(input))return false;
@@ -180,9 +185,9 @@ namespace AgDns {
     Candidate[] candidates=nameOk.Length>0?await Within(t=>net.DohCandidates(nameOk,template,t),tok,Left(sw,options),new Candidate[0],notes,"DoH check",late):new Candidate[0];
     var pinned=candidates.Where(c=>c.DohValidated).Select(c=>c.Server).ToArray();
     if(nameOk.Length>0&&pinned.Length==0&&!tok.IsCancellationRequested)notes.Add("TLS on the provider name succeeded, but DoH for both Google domains did not validate; nothing to pin.");
-    ct.ThrowIfCancellationRequested();   // cancelled by the person: neither a result nor a timeout
+    ct.ThrowIfCancellationRequested();   // cancelled by the user: neither a result nor a timeout
     bool exceeded=overall.IsCancellationRequested&&!ct.IsCancellationRequested||sw.Elapsed>=options.Budget;
-    // Gave up = nothing validated AND the time ran out (or the resolvers were silent and so nothing was even found): that is "did not finish in time", not "no address passed".
+    // Gave up = nothing validated and the time ran out (or the resolvers were silent): that is "did not finish in time", not "no address passed".
     bool gaveUp=pinned.Length==0&&(exceeded||lateTimeout||(anyTimeout&&all.Length==0));
     if(exceeded)notes.Add("Search budget of "+(int)options.Budget.TotalSeconds+" s used up"+(pinned.Length==0?"; no address was validated in time.":"; the addresses validated so far are kept."));
     return new{
@@ -200,7 +205,7 @@ namespace AgDns {
    }
   }
   // Just the validated addresses (TLS on the provider name + DoH for both Google domains), for the connect flow.
-  // Nothing validated and the budget used up -> BootstrapTimeoutException (an honest "ran out of time", not "no address passed").
+  // Nothing validated and the budget used up: BootstrapTimeoutException (a "ran out of time", not "no address passed").
   public static async Task<string[]> PinnedAsync(string template,CancellationToken ct=default,IBootstrapNet net=null,BootstrapOptions options=null) {
    var element=JsonSerializer.SerializeToElement(await RunAsync(template,ct,net,options),Program.JsonOptions);
    var pinned=element.GetProperty("Pinned").EnumerateArray().Select(x=>x.GetString()).ToArray();

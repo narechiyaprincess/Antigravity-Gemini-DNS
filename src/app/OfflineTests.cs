@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  public static partial class OfflineTests {
   static int passed;
   static void Check(bool value,string label){if(!value)throw new Exception("FAIL "+label);Console.WriteLine("PASS "+label);passed++;}
@@ -21,11 +21,47 @@ namespace AgDns {
   static void AppendCnameRr(List<byte> b,string owner,string target){AppendName(b,owner);b.AddRange(new byte[]{0,5,0,1,0,0,0,60});byte[] tb=EncodeName(target);b.AddRange(new byte[]{0,(byte)tb.Length});b.AddRange(tb);}
   static void AppendARr(List<byte> b,string owner,string ipStr){AppendName(b,owner);b.AddRange(new byte[]{0,1,0,1,0,0,0,60});byte[] ipBytes=IPAddress.Parse(ipStr).GetAddressBytes();b.AddRange(new byte[]{0,4});b.AddRange(ipBytes);}
   static byte[] MakePacket(string host,int id,Action<List<byte>> addRecords,ushort ancount,int type=1){var q=Wire.Query(host,type,id);q[2]=129;q[3]=128;q[6]=(byte)(ancount>>8);q[7]=(byte)(ancount&255);var b=new List<byte>(q);addRecords(b);return b.ToArray();}
-  // ---- provider catalog (versioned data) ----
+  // provider catalog (versioned data)
   static void RunCatalogTests() {
    var cat=ProfileCatalog.BuiltIn;
    Check(cat.Schema==1&&!string.IsNullOrWhiteSpace(cat.Version)&&cat.Profiles.Length>=6,"catalog: embedded profiles.json loads with a version and at least six profiles");
-   Check(new[]{"dns.malw.link","xbox-dns.ru","dns.comss.one","geohide.ru","dns.dns-ai.ru","dns.bezmezhau.com"}.All(id=>cat.Find(id)!=null),"catalog: P1-P3 plus GeoHide, DNS-AI and BezMezhau are present");
+   Check(new[]{"dns.malw.link","dns.comss.one","geohide.ru","dns.bezmezhau.com","dns.zapret.moe","eu.geohide.ru"}.All(id=>cat.Find(id)!=null),"catalog: the two anchors (malw, comss) plus GeoHide, BezMezhau, Zapret and GeoHide EU are present");
+   Check(new[]{"xbox-dns.ru","dns.dns-ai.ru","dns-ai","P2","P5"}.All(n=>cat.Find(n)==null&&cat.FindRetired(n)!=null)&&!Program.KnownProfiles.ContainsKey("xbox-dns.ru")&&!Program.KnownProfiles.ContainsKey("P5"),"catalog: xbox-dns.ru and dns.dns-ai.ru are retired: no built-in, slot or alias resolves to them, and the retired list still knows the old names");
+   Check(cat.Default=="dns.malw.link"&&!cat.Find("dns.malw.link").Experimental&&!cat.Find("dns.comss.one").Experimental&&new[]{"dns.zapret.moe","eu.geohide.ru","geohide.ru"}.All(id=>cat.Find(id).Experimental),"catalog: the anchors stay the default and recommendable; new and degraded profiles are experimental (never recommended before a Good verdict)");
+   Check(cat.Profiles.All(p=>Uri.TryCreate(p.Template,UriKind.Absolute,out var u)&&u.Scheme==Uri.UriSchemeHttps&&u.AbsolutePath=="/dns-query"&&u.Query.Length==0&&u.UserInfo.Length==0)&&cat.Profiles.Select(p=>p.Slot).Distinct().Count()==cat.Profiles.Length,"catalog: every DoH template is a plain https URL on /dns-query and every slot is unique");
+   Check(cat.Find("dns.bezmezhau.ru")==null&&cat.Pending.Any(p=>p.Id=="dns.bezmezhau.ru"),"catalog: the legacy dns.bezmezhau.ru is kept as a pending note, not confused with dns.bezmezhau.com");
+   string liveJson=System.Text.Encoding.UTF8.GetString(ScriptStore.Embedded("profiles.json"));
+   Reject(()=>ProfileCatalog.Parse(liveJson.Replace("\"id\": \"xbox-dns.ru\", \"slot\": \"P2\"","\"id\": \"xbox-dns.ru\", \"slot\": \"P3\"")),"catalog: a retired slot that collides with a live profile is refused");
+   Reject(()=>ProfileCatalog.Parse(liveJson.Replace("\"id\": \"dns.dns-ai.ru\", \"slot\": \"P5\", \"aliases\": [\"dns-ai\"]","\"id\": \"dns.dns-ai.ru\", \"slot\": \"P5\", \"aliases\": [\"zapret\"]")),"catalog: a retired alias that collides with a live alias is refused");
+   foreach(var (saved,custom,expected,label) in new[]{("xbox-dns.ru","","dns.malw.link","retired id"),("P5","","dns.malw.link","retired slot"),("dns-ai","","dns.malw.link","retired alias"),("dns.comss.one","","dns.comss.one","live id"),("P3","","P3","live slot"),("","","dns.malw.link","empty name"),(AppSettings.CustomProfileId,"https://xbox-dns.ru/dns-query",AppSettings.CustomProfileId,"own profile on a retired host")}) {
+    var st=new AppSettings{NoSave=true,ProfileIdentityVersion=1,Profile=saved,CustomName=custom.Length>0?"mine":"",CustomTemplate=custom};st.NormalizeProfileIdentity();
+    Check(st.Profile==expected&&st.CustomTemplate==custom,"settings migration: "+label+" '"+saved+"' -> "+expected+", own profile fields untouched");
+   }
+   var legacyOwn=new AppSettings{NoSave=true,Profile="xbox-dns.ru",CustomName="xbox-dns.ru",CustomTemplate="https://own.example.test/dns-query"};legacyOwn.NormalizeProfileIdentity();
+   Check(legacyOwn.Profile==AppSettings.CustomProfileId&&legacyOwn.CustomName=="xbox-dns.ru"&&legacyOwn.CustomTemplate=="https://own.example.test/dns-query","settings migration: an old own profile that happens to carry a retired name stays the own profile");
+   var importedRetired=ConfigFile.Import("{\"Schema\":\"agdns-config\",\"Version\":1,\"Settings\":{\"Profile\":\"xbox-dns.ru\"}}",new AppSettings{NoSave=true});
+   Check(importedRetired.Ok&&importedRetired.Applied.Profile=="dns.malw.link","settings import: a file naming a retired profile imports and selects the default");
+   {
+    // network revision: only the route counts (owner's PC 2026-10-26: Ethernet + blinking Wi-Fi + Radmin VPN + Teredo + a VPN TUN)
+    EvidenceContext.NicView Nic(string id,System.Net.NetworkInformation.NetworkInterfaceType t,bool up,int ix,string addr,bool gw)=>new(id,t,up,ix,new[]{addr},new[]{"192.168.0.1"},gw?new[]{"192.168.0.1"}:new string[0],gw);
+    var E=System.Net.NetworkInformation.NetworkInterfaceType.Ethernet;var W=System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211;var T=System.Net.NetworkInformation.NetworkInterfaceType.Tunnel;var V=(System.Net.NetworkInformation.NetworkInterfaceType)53;
+    EvidenceContext.NicView[] Pc(bool wifiUp,string teredo="2001:0:1::1",string eth="192.168.0.10",string tun="172.19.0.1",bool radmin=true)=>new[]{Nic("eth",E,true,5,eth,true),Nic("wifi",W,wifiUp,11,"192.168.0.11",true),Nic("teredo",T,true,9,teredo,false),Nic("tun",V,true,3,tun,false)}.Concat(radmin?new[]{Nic("radmin",E,true,7,"26.1.2.3",true)}:new EvidenceContext.NicView[0]).ToArray();
+    string r0=EvidenceContext.RevisionOf(Pc(true),5);
+    Check(EvidenceContext.RevisionOf(Pc(false),5)==r0&&EvidenceContext.RevisionOf(Pc(true,teredo:"2001:0:9::9"),5)==r0&&EvidenceContext.RevisionOf(Pc(true,radmin:false),5)==r0,"network revision: a blinking second Wi-Fi, a Teredo address and an overlay LAN adapter with its own gateway do not change the network");
+    Check(EvidenceContext.RevisionOf(Pc(true,eth:"192.168.0.20"),5)!=r0&&EvidenceContext.RevisionOf(Pc(true,tun:"172.19.0.9"),5)!=r0&&EvidenceContext.RevisionOf(Pc(true),11)!=r0,"network revision: the primary adapter's address, the VPN tunnel and a move of the primary route do change it");
+    var epoch=new ScenarioNetworkEpoch();var c1=epoch.Capture("x").Network;epoch.Observe();epoch.Observe();
+    Check(epoch.Capture("x").Network==c1,"network epoch: address events without a real revision change do not move the epoch");epoch.Dispose();
+   }
+   {
+    string ok="{\"State\":\"DNS active\",\"Active\":true,\"JournalPhase\":\"Active\",\"DnsCacheFlushed\":true,\"Template\":\"https://dns.malw.link/dns-query\",\"Targets\":[\"a.example\",\"b.example\"],\"Servers\":[\"1.2.3.4\"]}";
+    var tg=new[]{"b.example","a.example"};var sv=new[]{"1.2.3.4"};const string tp="https://dns.malw.link/dns-query";
+    Check(LiveAssistedBackend.EngineProvedApply(ok,tp,tg,sv),"connect speed: the elevated engine's verified apply receipt proves the exact policy (no second 6-8 s diagnose)");
+    Check(!LiveAssistedBackend.EngineProvedApply(ok.Replace("\"DnsCacheFlushed\":true,",""),tp,tg,sv)&&!LiveAssistedBackend.EngineProvedApply(ok.Replace("1.2.3.4","5.6.7.8"),tp,tg,sv)&&
+     !LiveAssistedBackend.EngineProvedApply(ok,"https://dns.comss.one/dns-query",tg,sv)&&!LiveAssistedBackend.EngineProvedApply(ok.Replace("\"Active\":true","\"Active\":false"),tp,tg,sv)&&
+     !LiveAssistedBackend.EngineProvedApply("{}",tp,tg,sv)&&!LiveAssistedBackend.EngineProvedApply("not json",tp,tg,sv),"connect speed: a read-back without the resolver check, other pins, template or state falls back to the full diagnose");
+   }
+   string retiredError=null;try{Program.ParseNetworkArgs(new[]{"--network","--profile","xbox-dns.ru"});}catch(ArgumentException e){retiredError=e.Message;}
+   Check(retiredError!=null&&retiredError.Contains("retired"),"CLI: --profile with a retired name is refused and says it was retired");
    Check(cat.Find("P1").Id=="dns.malw.link"&&cat.Find("P4").Id=="geohide.ru"&&cat.Find("bezmezhau").Id=="dns.bezmezhau.com"&&Program.KnownProfiles["P6"].Template=="https://dns.bezmezhau.com/dns-query","catalog: slots and aliases resolve to the same pinned profile");
    Check(cat.Profiles.All(p=>p.Servers.All(Program.PublicIp)&&p.Template.StartsWith("https://")),"catalog: every pinned server is a public IP and every template is https");
    Check(cat.Pending.Any(p=>p.Id=="dns.astracat.ru"&&p.Template.Contains(":8443/")&&!string.IsNullOrWhiteSpace(p.Reason))&&cat.Find("dns.astracat.ru")==null,"catalog: Astracat stays pending with a recorded reason until an IP is verified");
@@ -47,7 +83,7 @@ namespace AgDns {
    Check(Bootstrap.TryParse("geohide.ru",out var bu1)&&bu1.AbsoluteUri=="https://geohide.ru/dns-query"&&Bootstrap.TryParse("https://dns.astracat.ru:8443/dns-query",out var bu2)&&bu2.Port==8443&&!Bootstrap.TryParse("http://x.test/dns-query",out _)&&!Bootstrap.TryParse("1.2.3.4",out _)&&!Bootstrap.TryParse("",out _),"bootstrap: a host name or https URL is accepted; IP literals and http are rejected");
   }
 
-  // ---- embedded scripts ----
+  // embedded scripts
   static void RunScriptStoreTests() {
    string root=Path.Combine(Path.GetTempPath(),"agdns-scripts-"+Guid.NewGuid().ToString("N"));
    try {
@@ -76,7 +112,7 @@ namespace AgDns {
    }finally{try{Directory.Delete(root,true);}catch{}}
   }
 
-  // ---- autostart without a question or a copy, and the elevated staging flow ----
+  // autostart without a question or a copy, and the elevated staging flow
   static void RunInstallTests() {
    string dir=Path.Combine(Path.GetTempPath(),"agdns-stable-"+Guid.NewGuid().ToString("N"));
    try {
@@ -88,13 +124,14 @@ namespace AgDns {
     try {
      string self=Environment.ProcessPath;
      string ours1=Path.Combine(dir,"ours1.exe");File.Copy(self,ours1,true);
-     string gone=Path.Combine(dir,"gone","AntigravityDnsUnlocker.exe");
+     string gone=Path.Combine(dir,"gone","AntigravityGeminiDns.exe");
+     void SeedEntry(string target){using var key=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(isoKey);key.SetValue(AutostartHelper.ValueName,"\""+target+"\" --minimized");}
      Check(AutostartHelper.SamePath(src,src.ToUpperInvariant())&&!AutostartHelper.SamePath(src,ours1)&&AutostartHelper.SamePath("\""+src+"\"",src),"autostart: path comparison ignores case and quotes");
      // the entry names a file that is gone: quietly moved to this exe
-     AutostartHelper.SetEnabled(true,gone);
+     SeedEntry(gone);
      Check(AutostartHelper.RepointIfMissing(self)&&AutostartHelper.IsEnabled(self)&&AutostartHelper.CurrentTarget()==self,"autostart: an entry whose file is gone is quietly pointed at the running exe");
      string absentRoot=Enumerable.Range('D',23).Select(c=>((char)c)+":\\").FirstOrDefault(r=>!Directory.Exists(r));
-     if(absentRoot!=null){string onStick=Path.Combine(absentRoot,"Apps","AntigravityDnsUnlocker.exe");AutostartHelper.SetEnabled(true,onStick);
+     if(absentRoot!=null){string onStick=Path.Combine(absentRoot,"Apps","AntigravityGeminiDns.exe");SeedEntry(onStick);
       Check(!AutostartHelper.RepointIfMissing(self)&&AutostartHelper.SamePath(AutostartHelper.CurrentTarget(),onStick),"autostart: an entry on a drive that is not there now (USB stick, offline share) is left alone");}
      AutostartHelper.SetEnabled(true,ours1);
      Check(!AutostartHelper.RepointIfMissing(self)&&AutostartHelper.SamePath(AutostartHelper.CurrentTarget(),ours1),"autostart: an entry whose file exists (another copy) is left alone at start");
@@ -109,7 +146,7 @@ namespace AgDns {
      Check(ok1&&prev1==ours1&&AutostartHelper.IsEnabled(self),"autostart: turning it on moves the entry to the running exe and names the other copy it had");
      bool ok2=AutostartHelper.EnableForCurrent(self,out string prev2);
      Check(ok2&&prev2==null,"autostart: turning it on again names no previous copy (it already names this exe)");
-     AutostartHelper.SetEnabled(true,gone);
+     SeedEntry(gone);
      bool ok3=AutostartHelper.EnableForCurrent(self,out string prev3);
      Check(ok3&&prev3==null&&AutostartHelper.IsEnabled(self),"autostart: a previous entry whose file is gone is not offered");
      AutostartHelper.SetEnabled(false);
@@ -133,14 +170,14 @@ namespace AgDns {
     string root=Path.Combine(dir,"elevated");
     var prep=ScriptStore.Prepare(true,root,src);
     Check(File.Exists(prep.ExePath)&&prep.ExeSha256==ScriptStore.Sha256File(src)&&ScriptStore.Sha256File(prep.ExePath)==prep.ExeSha256&&ScriptStore.ScriptNames.All(n=>File.Exists(prep.Script(n))),"elevated staging: scripts and a hash-verified exe copy are placed together");
-    File.AppendAllText(prep.ExePath,"x");bool caught=false;try{ScriptStore.Verify(prep);}catch(IOException e){caught=e.Message.Contains("AntigravityDnsUnlocker.exe");}
+    File.AppendAllText(prep.ExePath,"x");bool caught=false;try{ScriptStore.Verify(prep);}catch(IOException e){caught=e.Message.Contains("AntigravityGeminiDns.exe");}
     Check(caught,"elevated staging: a modified exe copy is detected before launch");
     var again=ScriptStore.Prepare(true,root,src);ScriptStore.Verify(again);
     Check(ScriptStore.Sha256File(again.ExePath)==again.ExeSha256,"elevated staging: re-staging replaces a modified exe copy");
    }finally{try{Directory.Delete(dir,true);}catch{}}
   }
 
-  // ---- benchmark on synthetic wire ----
+  // benchmark on synthetic wire
   static string B64(string host,string ip)=>Convert.ToBase64String(Answer(host,1,IPAddress.Parse(ip).GetAddressBytes()));
   static object Ok(string host,int ms,string ip)=>new{ms,packet=B64(host,ip)};
   static object Timeout()=>new{timeout=true};
@@ -154,6 +191,58 @@ namespace AgDns {
    lastRequests=t.Requests;return run;
   }
   static int lastRequests;
+  // «Замер» budget (10 s for the whole run, all profiles in parallel). Runs on the real default options, not a shortened test budget.
+  static void RunBenchmarkBudgetTests() {
+   string d1=Program.Targets[0],d2=Program.Targets[1];
+   var sv=new[]{"193.233.112.67","193.233.112.68"};
+   Check(new BenchOptions().TotalBudgetMs==10000&&new BenchOptions().RequestTimeoutMs==2500&&new BenchOptions().MaxParallel==6,"benchmark budget: the user's run is limited to 10 s; per-request timeout and parallelism are unchanged");
+   object Hang(string id)=>Prof(id,sv,new object[]{new{ok=true,ms=40,delay=60000}},new object[]{new{ms=40,delay=60000,packet=B64(d1,"193.233.112.67")}},new object[]{new{ms=40,delay=60000,packet=B64(d2,"193.233.112.88")}});
+   object Healthy(string id)=>Prof(id,sv,new object[]{new{ok=true,ms=40}},new[]{Ok(d1,40,"193.233.112.67")},new[]{Ok(d2,40,"193.233.112.88")});
+   // one healthy profile and five hanging ones: six profiles, so all of them hold a slot from the start (MaxParallel = 6)
+   var sw=Stopwatch.StartNew();
+   var run=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{Healthy("healthy"),Hang("h1"),Hang("h2"),Hang("h3"),Hang("h4"),Hang("h5")}}));
+   sw.Stop();
+   ProfileResult R(string id)=>run.Results.Single(r=>r.Id==id);
+   long ms=sw.ElapsedMilliseconds;
+   Check(ms>=9500&&ms<13000,"benchmark budget: the run ends at its 10 s budget even with hanging probes (wall-clock "+ms+" ms)");
+   Check(run.Truncated&&!run.Cancelled,"benchmark budget: a run cut by the budget is reported as truncated, not as cancelled");
+   Check(R("healthy").Attempts==6&&R("healthy").Verdict=="Good"&&R("healthy").Selectable&&R("healthy").MedianMs==40,"benchmark budget: a profile that finished before the deadline keeps its full result");
+   Check(run.Results.Where(r=>r.Id!="healthy").All(r=>r.Attempts==0&&r.Verdict=="NotMeasured"&&r.Detail=="time budget exhausted"&&!r.Selectable&&!r.Recommendable&&r.MedianMs<0),"benchmark budget: hanging probes are NotMeasured (time budget exhausted), never a false success or a latency");
+   Check(run.Winner=="healthy"&&R("healthy").Best,"benchmark budget: the winner is chosen only among the profiles that were actually measured");
+   // a new run after a truncated one starts clean: nothing from the cut run leaks into it
+   var again=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{Healthy("healthy")}}));
+   Check(!again.Truncated&&!again.Cancelled&&again.Results.Single().Attempts==6&&again.Results.Single().Verdict=="Good","benchmark budget: a fresh run after a truncated one is not contaminated by it");
+   bool en0=L.En;
+   try{
+    L.En=true;
+    Check(L.T(" с (лимит ")==" s (limit "&&L.T(" с). «Отмена» остановит замер.")==" s). “Cancel” stops it.","benchmark budget: the EN status text uses the same budget number (limit 10 s)");
+   }finally{L.En=en0;}
+   Check(!L.Has(" с (лимит 30 с). «Отмена» остановит замер."),"benchmark budget: the old 30 s status phrase is gone from the dictionary");
+   // A profile cut mid-way by the budget keeps its real counters but is never selectable or recommended on that partial sample (short budget: the logic does not depend on its length).
+   var tarpit=Prof("tarpit",sv,new object[]{new{ok=true,ms=10}},new object[]{new{ms=10,delay=600,packet=B64(d1,"193.233.112.67")}},new object[]{new{ms=10,delay=600,packet=B64(d2,"193.233.112.88")}});
+   var part=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{Healthy("healthy"),tarpit}}),default,t=>t.Options.TotalBudgetMs=2000);
+   ProfileResult PR(string id)=>part.Results.Single(r=>r.Id==id);
+   Check(part.Truncated&&PR("tarpit").Truncated&&PR("tarpit").Attempts>=1&&PR("tarpit").Attempts<6&&PR("tarpit").Verdict=="Partial"&&!PR("tarpit").Selectable&&!PR("tarpit").Recommendable,"benchmark budget: a profile cut after some attempts is Partial and never selectable on a partial sample");
+   Check(part.Winner=="healthy"&&!PR("tarpit").Best,"benchmark budget: a partially measured profile does not win over a fully measured one");
+   // The answer-address TLS check ignores the budget token on the live transport (shared cache): the run must still end at the budget, not wait for it.
+   var late=SyntheticTransport.Load(JsonSerializer.Serialize(new{attempts=6,totalBudgetMs=800,profiles=new object[]{Healthy("healthy")}}));
+   var lateT=new LateAnswerTransport(late);
+   var swLate=Stopwatch.StartNew();
+   var lateRun=System.Threading.Tasks.Task.Run(()=>Benchmark.RunAsync(late.Profiles,late.Options,lateT,null,default,true)).GetAwaiter().GetResult();
+   swLate.Stop();
+   Check(swLate.ElapsedMilliseconds<1600,"benchmark budget: a late answer-address TLS check cannot extend the run past its budget (wall-clock "+swLate.ElapsedMilliseconds+" ms)");
+   Check(lateRun.Truncated&&!lateRun.Results.Single().Selectable&&lateRun.Results.Single().Verdict=="Partial","benchmark budget: an unfinished answer-address check leaves the profile Partial and not selectable");
+  }
+
+  // Delegates to the scripted transport, but its answer-address TLS check ignores the token and takes 2 s, like a cached live handshake would.
+  sealed class LateAnswerTransport:IBenchTransport {
+   readonly SyntheticTransport inner;
+   public LateAnswerTransport(SyntheticTransport t){inner=t;}
+   public System.Threading.Tasks.Task<TlsInfo> HandshakeAsync(ProfileSpec p,string server,int timeoutMs,CancellationToken ct)=>inner.HandshakeAsync(p,server,timeoutMs,ct);
+   public System.Threading.Tasks.Task<Reply> QueryAsync(ProfileSpec p,string server,string host,int type,int timeoutMs,CancellationToken ct)=>inner.QueryAsync(p,server,host,type,timeoutMs,ct);
+   public async System.Threading.Tasks.Task<TlsInfo> AnswerTlsAsync(ProfileSpec p,string ip,string host,int timeoutMs,CancellationToken ct){await System.Threading.Tasks.Task.Delay(2000);return new TlsInfo{Ok=true};}
+  }
+
   static void RunBenchmarkTests() {
    string d1=Program.Targets[0],d2=Program.Targets[1];
    var sv=new[]{"193.233.112.67","193.233.112.68"};
@@ -175,6 +264,10 @@ namespace AgDns {
    Check(R("flaky").Verdict=="Flaky"&&R("flaky").Alive&&!R("flaky").Selectable&&R("flaky").Availability<0.6,"benchmark: unreliable profile is Flaky and not selectable");
    Check(R("partial").Verdict=="Partial"&&R("partial").Alive&&!R("partial").DomainsOk&&!R("partial").Selectable&&R("partial").Domains.Single(x=>x.Host==d2).Error!=null,"benchmark: profile that fails one Google domain is Partial");
    Check(R("dead").Verdict=="Dead"&&!R("dead").Alive&&R("dead").Score==0&&R("dead").Attempts==1,"benchmark: dead profile is detected after a single round (circuit breaker)");
+   // ranking: two "Good" profiles, the faster one leads even when the other scores a few points more (pool rotation lowers stability, not quality)
+   {var fast=new ProfileResult{Id="fast",Verdict="Good",Selectable=true,Recommendable=true,Score=97,MedianMs=50,P95Ms=90};var slow=new ProfileResult{Id="slow",Verdict="Good",Selectable=true,Recommendable=true,Score=100,MedianMs=86,P95Ms=106};var flaky=new ProfileResult{Id="flaky",Verdict="Flaky",Selectable=false,Recommendable=false,Score=99,MedianMs=10};
+    var ranked=new[]{slow,flaky,fast};Benchmark.RankForTest(ranked);
+    Check(fast.Rank==1&&fast.Best&&slow.Rank==2&&flaky.Rank==3,"benchmark ranking: among profiles that passed every check the faster one is best; a failing profile stays behind whatever its latency");}
    Check(R("shifty").Verdict=="Flaky"&&R("shifty").Stability<=0.5+1e-9&&R("shifty").Availability==1&&!R("shifty").Selectable,"benchmark: unstable answers lower stability, mark Flaky and block selection");
    Check(R("blockedtls").Verdict=="Partial"&&!R("blockedtls").Domains.Single(x=>x.Host==d2).TlsOk,"benchmark: a Google domain whose answer fails TLS makes the profile Partial");
    Check(run.Winner=="good"&&R("good").Rank==1&&R("good").Best&&run.Results.Count(r=>r.Best)==1,"benchmark: ranking puts the best selectable profile first and highlights exactly one");
@@ -202,10 +295,22 @@ namespace AgDns {
     Check(loaded.Count==Benchmark.HistoryLimit&&loaded.Last().Winner=="good"&&loaded.Last().Results.Length==run.Results.Length,"benchmark: history is capped and round-trips");
     File.WriteAllText(histTmp,"{ not json");
     Check(Benchmark.LoadHistory().Count==0&&Benchmark.AppendHistory(run)&&Benchmark.LoadHistory().Count==1,"benchmark: corrupt history is ignored and replaced");
+    foreach(string invalid in new[]{"null","{\"Results\":null}","{\"Results\":[null]}","{\"Results\":[{\"Domains\":null}]}","{\"Results\":[{\"Domains\":[null]}]}"}){
+     string damaged="{\"Runs\":["+invalid+"]}";File.WriteAllText(histTmp,damaged);
+     Check(Benchmark.LoadHistory().Count==0&&File.ReadAllText(histTmp)==damaged,"benchmark: invalid persisted run is ignored without overwriting history: "+invalid);
+     Check(Benchmark.AppendHistory(run)&&Benchmark.LoadHistory().Count==1,"benchmark: valid measurement recovers after invalid persisted run");
+    }
+    File.WriteAllText(histTmp,"{\"Runs\":[null,"+JsonSerializer.Serialize(run,Program.JsonOptions)+",{\"Results\":[null]}]}");
+    var recovered=Benchmark.LoadHistory();
+    Check(recovered.Count==1&&recovered[0].Id==run.Id,"benchmark: valid history survives adjacent invalid entries");
+    using(var historyForm=new MainForm(true)){
+     historyForm.PrecisionTrendForTest(recovered);historyForm.Show();Application.DoEvents();
+     Check(historyForm.IsHandleCreated,"benchmark: recovered persisted history renders in the window");
+    }
    }finally{Benchmark.HistoryPath=histOld;try{Directory.Delete(Path.GetDirectoryName(histTmp),true);}catch{}}
   }
 
-  // ---- plain messages and one action per code ----
+  // plain messages and one action per code
   static void RunMessageTests() {
    var all=CodeTable.All.ToList();
    Check(all.Count>=40&&all.All(i=>!string.IsNullOrWhiteSpace(i.Title)&&!string.IsNullOrWhiteSpace(i.Text)&&!string.IsNullOrWhiteSpace(i.Action)),"messages: every table entry has a title, a text and an action");
@@ -218,7 +323,7 @@ namespace AgDns {
    Check(CodeTable.Lookup("RECOVERY_REQUIRED").Title=="Требуется восстановление"&&CodeTable.Lookup("WMI_NOT_RESPONDING").Text.Contains("изменения не начаты"),"messages: recovery and WMI messages describe the required action");
   }
 
-  // ---- text fits its place in the window: measured with pixel fonts at 96/120/144/192 dpi, so the check does not depend on the screen of the machine ----
+  // text fits its place in the window: measured with pixel fonts at 96/120/144/192 dpi, so the check does not depend on the screen of the machine
   static int TextHeight(string text,string family,float pt,float dpi,int widthUnits){
    using(var f=new Font(family,pt*dpi/72f,GraphicsUnit.Pixel))return TextRenderer.MeasureText(text,f,new Size((int)Math.Round(widthUnits*dpi/96f),int.MaxValue/4),TextFormatFlags.WordBreak|TextFormatFlags.NoPadding).Height;
   }
@@ -230,7 +335,7 @@ namespace AgDns {
    // REPORT_SAVED is shown in a message box (no line limit), every other entry in the status area of the main page
    foreach(var i in CodeTable.All.Where(x=>x.Code!="REPORT_SAVED"))shown.Add((i.Code,i.Title,i.Text+"\n"+i.Action));
    // the two sentences the window composes itself, with the longest profile names it can show
-   string a="dns.bezmezhau.com",b2="dns.dns-ai.ru";
+   string a="dns.bezmezhau.com",b2="eu.geohide.ru";
    shown.Add(("switch offer",CodeTable.Lookup("PROVIDER_SWITCH_OFFERED").Title,CodeTable.SwitchOfferText(a,b2)+"\n"+CodeTable.Lookup("PROVIDER_SWITCH_OFFERED").Action));
    shown.Add(("profile not applied",CodeTable.ProfileNotAppliedTitle,CodeTable.ProfileNotAppliedText+"\n"+CodeTable.ProfileNotAppliedAction));
    foreach(string code in new[]{"BOOTSTRAP_NO_ADDRESS","DOH_NO_VALIDATED_ENDPOINT","DNS_TIMEOUT_OR_UNREACHABLE_OR_TLS_FAILURE"}){var gi=CodeTable.Lookup(code);shown.Add(("gemini "+code,gi.Title,gi.Text+"\n"+CodeTable.GeminiAction));}
@@ -240,8 +345,8 @@ namespace AgDns {
     if(TextWidth(s.Title,Theme.Family(16,true),16,dpi)>(380-20)*dpi/96f)bad.Add(s.Name+" title@"+dpi);
     if(TextHeight(s.Body,Theme.Family(9f,false),9f,dpi,332)>50*dpi/96f+0.5f)bad.Add(s.Name+" body@"+dpi);
    }
-   // info page: the description must fit its 324 x 98 unit box (six lines of 9 pt)
-   foreach(float dpi in new[]{96f,120f,144f,192f})foreach(var sc0 in new[]{MainForm.BridgeScope.Core,MainForm.BridgeScope.Google})if(TextHeight(MainForm.InfoTextFor(sc0),Theme.Family(9f,false),9f,dpi,324)>MainForm.InfoTextH*dpi/96f+0.5f)bad.Add("info "+sc0+"@"+dpi);
+   // info page: the description is laid out by its measured height, but stays within six lines of 9 pt at the card's text width (316 units)
+   foreach(float dpi in new[]{96f,120f,144f,192f})foreach(var sc0 in new[]{MainForm.BridgeScope.Core,MainForm.BridgeScope.All})if(TextHeight(MainForm.InfoTextFor(sc0),Theme.Family(9f,false),9f,dpi,316)>MainForm.InfoTextMaxH*dpi/96f+0.5f)bad.Add("info "+sc0+"@"+dpi);
    Check(bad.Count==0,"text fit: every status title is one line and every status text is at most three lines at 100/125/150/200 % DPI"+(bad.Count==0?"":" — "+string.Join("; ",bad)));
    // buttons of the main page in every state: one main button, on top, nothing overlapping
    using(var form=new MainForm(true)) {
@@ -255,7 +360,7 @@ namespace AgDns {
    }
   }
 
-  // Test transport that moves the Gemini toggle during the first call, the way a person can while a measurement runs.
+  // Test transport that moves the Gemini toggle during the first call, the way a user can while a measurement runs.
   sealed class FlipTransport:IBenchTransport {
    readonly IBenchTransport inner;bool flipped;
    public FlipTransport(IBenchTransport i){inner=i;}
@@ -264,7 +369,7 @@ namespace AgDns {
    public System.Threading.Tasks.Task<Reply> QueryAsync(ProfileSpec p,string server,string host,int type,int timeoutMs,CancellationToken ct){Flip();return inner.QueryAsync(p,server,host,type,timeoutMs,ct);}
    public System.Threading.Tasks.Task<TlsInfo> AnswerTlsAsync(ProfileSpec p,string ip,string host,int timeoutMs,CancellationToken ct){Flip();return inner.AnswerTlsAsync(p,ip,host,timeoutMs,ct);}
   }
-  // ---- "Также для Gemini" (night): the catalog's second host set, the one switch, nothing the command line can add ----
+  // "Также для Gemini" (night): the catalog's second host set, the one switch, nothing the command line can add
   static void RunGeminiTests() {
    var cat=ProfileCatalog.BuiltIn;
    Check(cat.GeminiTargets.Length==2&&cat.GeminiTargets.All(h=>h.Contains(".")&&!h.Contains("*")&&!cat.Targets.Contains(h)),"gemini: the catalog has two exact Gemini hosts, no wildcard, none of the core hosts");
@@ -324,11 +429,11 @@ namespace AgDns {
    using(var form=new MainForm(true)) {
     form.Show();Application.DoEvents();
     try {
-     Check(!form.GeminiOn&&form.GeminiToggleEnabled&&!Program.Gemini,"gemini window: the toggle is off by default and usable");
+     Check(!form.GeminiOn&&form.GeminiToggleEnabled&&!Program.Gemini,"gemini window: the toggle is off by default and usable"+(form.GeminiToggleEnabled&&!Program.Gemini?"":" (on="+form.GeminiOn+" enabled="+form.GeminiToggleEnabled+" flag="+Program.Gemini+" "+form.ButtonStateForTest+")"));
      form.SetGeminiForTest(true);
-     Check(form.GeminiOn&&Program.Targets.Length==4&&form.SubText.EndsWith("Antigravity/Gemini"),"gemini window: on -> four hosts everywhere and «Antigravity/Gemini» under the status");
+     Check(form.GeminiOn&&Program.Targets.Length==4&&form.ScopeSelected==MainForm.BridgeScope.CoreGemini&&form.ScopePicker.IsOn(0)&&form.ScopePicker.IsOn(1)&&!form.ScopePicker.IsOn(2)&&form.ScopePicker.Items[1]=="Gemini","gemini window: on -> four hosts everywhere and «Antigravity/Gemini» under the status");
      form.SetGeminiForTest(false);
-     Check(!form.GeminiOn&&Program.Targets.Length==2&&form.SubText.EndsWith("→  Antigravity"),"gemini window: off again -> two hosts, «Antigravity» only");
+     Check(!form.GeminiOn&&Program.Targets.Length==2&&form.ScopeSelected==MainForm.BridgeScope.Core&&form.ScopePicker.Items[0]=="Antigravity","gemini window: off again -> two hosts, «Antigravity» only");
      form.SmokeState("drift");Check(!form.GeminiToggleEnabled,"gemini window: while a bridge needs repair the toggle waits");
      form.SmokeState("active");Check(form.GeminiToggleEnabled,"gemini window: with a working bridge the toggle is usable (the change is a reconnect)");
      // the bridge that exists decides: a status with the Gemini hosts switches the toggle on, one without switches it off
@@ -342,7 +447,7 @@ namespace AgDns {
    }
   }
 
-  // ---- main page, bridge latency, settings, info page, icons and version display ----
+  // main page, bridge latency, settings, info page, icons and version display
   sealed class FakeSpeedProbe:ISpeedProbe {
    public Func<string,Reply> Answer=s=>new Reply{Addresses=new[]{"157.22.177.90"}};
    public readonly Queue<TlsInfo> Replies=new Queue<TlsInfo>();public int DohCalls,TlsCalls;public readonly List<string> TlsTo=new List<string>();
@@ -400,20 +505,52 @@ namespace AgDns {
      Check(form.ProfilePingTextNow=="42 мс"&&form.ProfilePingDotNow==Theme.Green,"main: a working bridge shows its ping in the profile field: a green dot and «42 мс»");
      Check(!form.MainTexts.Any(t=>t=="Пинг"||t=="DNS"||t.StartsWith("Адреса")||t.Contains("Сетевые проверки")||t.Contains("не проверена")),"main: no «Пинг» and «DNS» rows, no address source and no 'not checked' rows on the main page");
      var bb=form.BridgeBounds;int cw=form.ClientSize.Width;
-     Check(form.BridgeSubtle&&bb.Width<cw-(int)(56*sc)-4&&Math.Abs(bb.Left+bb.Width/2-cw/2)<=2,"main: «Отключить мост» is a quiet centred pill, not a full-width red slab");
-     Check(!form.DetailsLinkVisible,"main: no «Подробнее» while everything works");
+     Check(form.BridgeSubtle&&bb.Width<=form.ProfileBounds.Width&&Math.Abs(bb.Left+bb.Width/2-cw/2)<=2,"main: disconnect keeps the quiet treatment and aligns with the provider field");
+     Check(!form.DetailsLinkVisible,"main: «Подробнее» is not a permanent footer: a working bridge has nothing to read there");
      foreach(string mode in new[]{"idle","checking","busy","recovery","conflict","wmi","drift","switch","noprovider","active-unchecked"}){
       form.SmokeState(mode);
-      bool details=mode!="idle"&&mode!="checking"&&mode!="busy"&&mode!="active-unchecked";
+      bool details=mode=="recovery"||mode=="conflict"||mode=="wmi"||mode=="noprovider";   // only a state with a message to read, and no other main action in its place
       Check(form.ProfilePingTextNow==""&&form.DetailsLinkVisible==details,"main: state "+mode+" -> no ping in the field, «Подробнее» "+(details?"shown":"hidden"));
      }
      form.SmokeState("idle");
      Check(!form.BridgeSubtle&&form.PrimaryButtons==1,"main: «Подключить мост» is the one solid main button");
+     Check(form.BridgeText=="Подключить мост"&&form.BridgeFill==Theme.GreenSolid&&form.BridgeEnabled,"main: «Подключить мост» is green and enabled");
+     form.SmokeState("active");
+     Check(form.BridgeText=="Отключить мост"&&form.BridgeFill==Theme.Red&&form.BridgeSubtle&&form.BridgeEnabled&&form.PrimaryButtons==1,"main: «Отключить мост» is red (quiet) and enabled");
+     form.SmokeState("busy");
+     Check(!form.BridgeEnabled,"main: an operation in progress disables the bridge button (neutral disabled fill)");
+     form.SmokeState("idle");
+     Check(form.BridgeFill==Theme.GreenSolid&&form.BridgeEnabled,"main: connected -> busy -> disconnected returns to the green connect button");
+     Check(MainForm.BridgeFillFor(false,false,false)==Theme.GreenSolid&&MainForm.BridgeFillFor(false,false,true)==Theme.Red&&MainForm.BridgeFillFor(false,true,true)==Theme.Danger&&MainForm.BridgeFillFor(true,false,true)==Theme.Soft,"main: bridge colour follows one state source (connect green, disconnect red, recovery solid red)");
      form.SmokeState("recovery");
      Check(!form.BridgeSubtle&&form.BridgeText=="Восстановить","main: «Восстановить» keeps the solid colour (it has to be done)");
+     form.SmokeState("drift");
+     Check(form.FixVisible&&form.FixFill==Theme.AmberSolid&&form.PrimaryButtons==1&&form.PrimaryButtonOnTop,"main: a bridge that needs repair shows the yellow «Починить» in the main slot instead of «Отключить мост»");
+     form.SmokeState("active");form.ShowConnectionUnavailable(new AssistedResult(AssistedOutcome.Refused,"CONNECTION_SELECTION_TIMEOUT",false,"NONE",null));
+     Check(form.StatusText=="Мост подключён"&&form.BridgeText=="Отключить мост"&&!form.FixVisible,"main: a switch that timed out keeps the working bridge and says so, not «требует исправления»");
+     {
+      int repairs=0;var hookBefore=form.MutateHook;form.MutateHook=(a,rep)=>{if(a=="enable"&&rep)repairs++;return System.Threading.Tasks.Task.CompletedTask;};
+      var drift=new HealthReport{Kind=HealthKind.Drift,Code=HealthMonitor.ProviderDown,CanFix=true,Utc=DateTime.UtcNow};
+      form.CanRepairSilently=()=>false;form.SmokeState("active");
+      Check(!form.AutoRepairAsync(drift).GetAwaiter().GetResult()&&repairs==0,"self-repair: without administrator rights nothing starts by itself (Windows would ask); the yellow «Починить» waits for one click");
+      form.CanRepairSilently=()=>true;
+      Check(form.AutoRepairAsync(drift).GetAwaiter().GetResult()&&repairs==1,"self-repair: with administrator rights a confirmed drift is repaired without a click");
+      Check(!form.AutoRepairAsync(drift).GetAwaiter().GetResult()&&repairs==1,"self-repair: not repeated within 5 minutes");
+      form.SmokeState("idle");Check(!form.AutoRepairAsync(drift).GetAwaiter().GetResult()&&repairs==1,"self-repair: never connects a bridge that is off");
+      form.MutateHook=hookBefore;form.CanRepairSilently=()=>Program.IsAdmin();
+     }
      // the ping in the window: measured after a status that says the bridge works, cached, re-measured on demand, never while busy or when off
      int calls=0;string[] got=null;long next=37;
      form.SpeedSource=(t,s,ct)=>{calls++;got=s;return System.Threading.Tasks.Task.FromResult(next<0?new SpeedResult{Error="TLS_FAILED",Utc=DateTime.UtcNow}:new SpeedResult{Ms=next,Proxy="157.22.177.90",Utc=DateTime.UtcNow});};
+     {
+      string retired="{\"State\":\"DNS active\",\"Active\":true,\"JournalPhase\":\"Active\",\"ProfileName\":\"xbox-dns.ru\",\"Servers\":[\"111.88.96.56\"],\"Template\":\"https://xbox-dns.ru/dns-query\"}";
+      int before=form.ProfileCount;form.PresentForTest(retired);Application.DoEvents();
+      Check(form.CurrentProfileId=="xbox-dns.ru"&&form.ProfileCount==before+1&&form.BridgeText=="Отключить мост"&&form.BridgeEnabled,"main: a bridge still applied through a retired provider names that provider and can be disconnected");
+      form.PresentForTest(retired);Application.DoEvents();Check(form.ProfileCount==before+1,"main: the retired provider is listed once");
+      form.PresentForTest("{\"State\":\"Not configured\",\"Code\":\"ROLLED_BACK\",\"JournalPhase\":\"Restored\",\"Active\":false}");Application.DoEvents();
+      Check(form.ProfileCount==before&&form.CurrentProfileId!="xbox-dns.ru","main: once the bridge is off the retired provider leaves the list");
+      calls=0;got=null;
+     }
      form.SmokeState("idle");
      string active="{\"State\":\"DNS active\",\"Active\":true,\"JournalPhase\":\"Active\",\"Servers\":[\"83.220.169.155\"],\"Template\":\"https://dns.comss.one/dns-query\"}";
      form.PresentForTest(active);Application.DoEvents();
@@ -457,16 +594,16 @@ namespace AgDns {
       form.SpeedSource=null;
      }
      // main page: the profile field and «Через мост» (Antigravity / + Gemini Desktop / + Браузер) sit under the button, each under its own caption
-     Check(form.ProfileControl.Parent==form.ScopeControl.Parent&&form.ProfileBounds.Top>=form.BridgeBounds.Bottom&&form.ScopeBounds.Top>=form.ProfileBounds.Bottom&&form.ProfileCaptionText=="Профиль"&&form.MainTexts.Contains("Через мост"),"main: the profile field and «Через мост» sit under the button, profile first, each under its caption");
+     Check(form.ProfileControl.Parent==form.ScopeControl.Parent&&form.ScopeBounds.Top>=form.BridgeBounds.Bottom&&form.ProfileBounds.Top>=form.ScopeBounds.Bottom&&form.ProfileCaptionText=="DNS-профиль"&&form.MainTexts.Contains("DNS выбранных сервисов использует мост"),"main: service selection precedes provider card; caption accurately describes DNS scope");
      {var geo=form.MainGeometryProblems();Check(geo.Count==0,"main: the button, the profile field and the levels are one even block: equal gaps, equal fields, equal margins"+(geo.Count==0?"":" — "+string.Join("; ",geo)));}
      form.SelectTab(2);Application.DoEvents();
-     Check(form.ToggleTexts.SequenceEqual(new[]{"Запускать при входе в Windows","При автозапуске — сразу в трей","Крестик сворачивает в трей","Уведомлять о сбоях моста"})&&form.Toggles.All(t=>!string.IsNullOrEmpty(t.Subtitle)&&t.Icon!=IconKind.None),"settings: four switches with an icon and a line saying what each does");
+     Check(form.ToggleTexts.SequenceEqual(new[]{"Запускать при входе в Windows","Запуск от администратора","При автозапуске — сразу в трей","Крестик сворачивает в трей","Уведомлять о сбоях моста"})&&form.Toggles.All(t=>!string.IsNullOrEmpty(t.Subtitle)&&t.Icon!=IconKind.None),"settings: five switches with an icon and a line saying what each does");
      Check(form.LanguageControl.Visible&&form.LanguageControl.Parent!=null&&form.LanguageControl.Parent.Visible&&form.LanguageControl.Width>0&&form.CustomRow.Text=="Свой DoH-провайдер"&&!form.CustomPanelVisible,"settings: language and the own provider are rows; the provider editor is closed");
      form.ShowCustomPanelForTest();Check(form.CustomPanelVisible,"settings: the own provider opens its editor over the window");form.SelectTab(3);Check(!form.CustomPanelVisible,"settings: changing tab closes the editor");form.SelectTab(2);
      // info: credit, version 1.0, platform; patcher download and its author; the contact row with the Telegram mark
      form.SelectTab(4);Application.DoEvents();
      var info=form.LabelsOf(4).Select(l=>l.Text).ToList();
-     Check(info.Any(t=>t=="Версия "+AppInfo.Display+"  ·  Windows x64")&&info.Contains("by @narechiyaprincess")&&!info.Any(t=>t.Contains("один файл")||t.Contains("откроется приложение")),"info: «by @narechiyaprincess», «Версия 1.0 · Windows x64»; no 'один файл' and no hint about how Telegram opens");
+     Check(info.Any(t=>t=="Версия "+AppInfo.Version+"  ·  Windows x64")&&info.Contains("by @narechiyaprincess")&&!info.Any(t=>t.Contains("один файл")||t.Contains("откроется приложение")),"info: «by @narechiyaprincess», full feature version and Windows x64; no 'один файл' and no hint about how Telegram opens");
      var rows=form.InfoRows;
      Check(rows[0].Text=="Скачать Antigravity Patcher"&&rows[1].Text=="@avencoresyt"&&rows[1].Kind==LinkRow.Mark.Telegram&&rows[2].Text=="@your_sister_loves_me"&&rows[2].Kind==LinkRow.Mark.Telegram&&rows.All(r=>r.Width>=rows[0].Parent.Width-(int)(40*sc)),"info: patcher download, the patcher author and the contact are full-width rows with the Telegram mark (no lone button in a corner)");
      // every label of the settings and info pages fits its box at 100/125/150/200 %
@@ -483,14 +620,14 @@ namespace AgDns {
        float need=TextWidth(name,Theme.Family(9.5f,false),9.5f,dpi)+TextWidth(ping,Theme.Family(9f,false),9f,dpi)+(14+11+10+36)*dpi/96f;
        if(name.Length<24&&need>332*dpi/96f)bad.Add("field «"+name+"» + «"+ping+"»@"+dpi);
       }
-      if(TextWidth("Подключить через dns.bezmezhau.com",Theme.Family(10.5f,true),10.5f,dpi)+(int)((18+9+24)*dpi/96f)>(380-56)*dpi/96f)bad.Add("offer button@"+dpi);   // glyph, gap, the minimum side margins of the paint
+      if(TextWidth("Подключить через dns.bezmezhau.com",Theme.Family(10.5f,true),10.5f,dpi)+(int)((18+9+24)*dpi/96f)>(380-28)*dpi/96f)bad.Add("offer button@"+dpi);   // the actual maximum CTA width in UpdateButtons.Main
      }
      Check(bad.Count==0,"text fit: settings and info labels, toggles, chips and the main button fit at 100/125/150/200 % DPI"+(bad.Count==0?"":" — "+string.Join("; ",bad)));
     } finally { form.Close(); }
    }
   }
 
-  // ---- all of Google, the scope selector, English, the Telegram mark ----
+  // all of Google, the scope selector, English, the Telegram mark
   static readonly System.Text.RegularExpressions.Regex Cyr=new System.Text.RegularExpressions.Regex("[А-Яа-яЁё]");
   static void RunScopeLangTests() {
    var cat=ProfileCatalog.BuiltIn;
@@ -506,7 +643,7 @@ namespace AgDns {
    try {
     Program.Gemini=true;Program.Google=true;
     Check(Program.Targets.Length==cat.Targets.Length+cat.GeminiTargets.Length+cat.GoogleTargets.Length&&Program.Hosts.SequenceEqual(cat.TargetsFor(true))&&Program.Target==cat.Targets[0],"google: on -> rules for every host and suffix; every check (DoH, TLS, Windows answers) runs on the exact hosts only");
-    Check(Program.HasGoogle(Program.Targets)&&!Program.HasGoogle(cat.TargetsFor(true))&&MainForm.ScopeOf(Program.Targets)==MainForm.BridgeScope.Google&&MainForm.ScopeOf(cat.TargetsFor(true))==MainForm.BridgeScope.Gemini&&MainForm.ScopeOf(cat.Targets)==MainForm.BridgeScope.Core,"google: a journal's scope is recognised (core, + Gemini, all Google)");
+    Check(Program.HasGoogle(Program.Targets)&&!Program.HasGoogle(cat.TargetsFor(true))&&MainForm.ScopeOf(Program.Targets)==MainForm.BridgeScope.All&&MainForm.ScopeOf(cat.TargetsFor(true))==MainForm.BridgeScope.CoreGemini&&MainForm.ScopeOf(cat.Targets)==MainForm.BridgeScope.Core,"google: a journal's scope is recognised (core, + Gemini, all Google)");
     bool refused=false;try{Wire.SystemQuery(".google.com",1);}catch(ArgumentException){refused=true;}
     Check(refused,"google: a suffix is never queried as a host");
     Program.ValidateCliArgs(new[]{"--enable","--google"});Program.ValidateCliArgs(new[]{"--network","--google","--profile","P1"});
@@ -517,18 +654,18 @@ namespace AgDns {
     form.Show();Application.DoEvents();bool sg=Program.Gemini,sgo=Program.Google;
     try {
      form.SetScopeForTest(MainForm.BridgeScope.Core);
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);
+     form.ClickScopeForTest(MainForm.BridgeScope.All);
      Check(form.BrowserPanelVisible&&!Program.Google&&form.BrowserBackVisible&&!form.BrowserContinueEnabled,"google window: «+ Браузер» first asks which browser is used; nothing changes yet and the question cannot be passed without an answer");
      form.BrowserCancelForTest();
-     Check(!form.BrowserPanelVisible&&!Program.Google&&!Program.Gemini&&form.ScopeIndex==0,"google window: backing out of the browser question puts the selector back where it was");
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();
-     Check(Program.Google&&Program.Gemini&&form.ScopeIndex==2&&!form.BrowserPanelVisible&&form.SubText.EndsWith("Antigravity/Gemini/браузер"),"google window: «+ Браузер» with no bridge, after the browser answer -> the next connect covers all of Google; the line under the status says so");
-     form.ClickScopeForTest(MainForm.BridgeScope.Gemini);
-     Check(!Program.Google&&Program.Gemini&&form.SubText.EndsWith("Antigravity/Gemini"),"google window: «+ Gemini» -> Antigravity/Gemini");
+     Check(!form.BrowserPanelVisible&&!Program.Google&&!Program.Gemini&&form.ScopeSelected==MainForm.BridgeScope.Core,"google window: backing out of the browser question puts the selector back where it was");
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();
+     Check(Program.Google&&Program.Gemini&&form.ScopeSelected==MainForm.BridgeScope.All&&!form.BrowserPanelVisible&&form.ScopePicker.IsOn(2)&&form.ScopePicker.Items.Length==3,"google window: «+ Браузер» with no bridge, after the browser answer -> the next connect covers all of Google; the line under the status says so");
+     form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);
+     Check(!Program.Google&&Program.Gemini&&form.ScopeSelected==MainForm.BridgeScope.CoreGemini&&!form.ScopePicker.IsOn(2)&&form.ScopePicker.Items[1]=="Gemini","google window: «+ Gemini» -> Antigravity/Gemini");
      form.JournalReader=()=>"{\"Phase\":\"Active\"}";
      string all="[\""+string.Join("\",\"",cat.TargetsForGoogle())+"\"]";
      form.PresentForTest("{\"State\":\"DNS active\",\"Active\":true,\"JournalPhase\":\"Active\",\"Targets\":"+all+",\"Servers\":[],\"Template\":\"x\"}");
-     Check(form.ScopeIndex==2&&Program.Google,"google window: a bridge applied for all of Google moves the selector to «+ Браузер»");
+     Check(form.ScopeSelected==MainForm.BridgeScope.All&&Program.Google,"google window: a bridge applied for all of Google moves the selector to «+ Браузер»");
      form.SmokeState("drift");Check(!form.ScopeControl.Enabled,"google window: while a bridge needs repair the selector waits");
      form.SmokeState("busy");Check(!form.ScopeControl.Enabled,"google window: no change of scope during an operation");
     } finally { Program.Gemini=sg;Program.Google=sgo;form.Close(); }
@@ -559,7 +696,7 @@ namespace AgDns {
      form.Show();Application.DoEvents();var left=new List<string>();
      void Scan(string where){foreach(var t in form.AllVisibleTexts())if(Cyr.IsMatch(t)&&t!="Русский"&&t!="Русский · English")   /* language names are written in their own language */left.Add(where+": «"+t+"»");}
      foreach(string mode in new[]{"idle","checking","busy","active","active-unchecked","recovery","conflict","wmi","drift","switch","noprovider"}){form.SmokeState(mode);Scan(mode);}
-     form.SetScopeForTest(MainForm.BridgeScope.Gemini);Scan("scope gemini");form.SetScopeForTest(MainForm.BridgeScope.Core);
+     form.SetScopeForTest(MainForm.BridgeScope.CoreGemini);Scan("scope gemini");form.SetScopeForTest(MainForm.BridgeScope.Core);
      for(int tab=1;tab<5;tab++){form.SelectTab(tab);Application.DoEvents();Scan("tab"+tab);}
      form.SelectTab(2);form.ShowCustomPanelForTest();Scan("custom");
      foreach(string bid in new string[]{null,"chrome","edge","firefox","brave","other"}){form.SmokeBrowserPanel(bid,true);Scan("browser "+(bid??"none"));}
@@ -570,8 +707,8 @@ namespace AgDns {
    } finally { L.En=en0; }
   }
 
-  // ---- speed and comfort (premium pass): instant state from the journal, background status, status taken from the operation, keys, window position ----
-  static void Pump(System.Threading.Tasks.Task t,int maxMs=5000){var sw=Stopwatch.StartNew();while(!t.IsCompleted&&sw.ElapsedMilliseconds<maxMs){Application.DoEvents();Thread.Sleep(5);}Application.DoEvents();}
+  // speed and comfort (premium pass): instant state from the journal, background status, status taken from the operation, keys, window position
+  static void Pump(System.Threading.Tasks.Task t,int maxMs=5000){var sw=Stopwatch.StartNew();while(!t.IsCompleted&&sw.ElapsedMilliseconds<maxMs){MainForm.PumpBrowserMessages();Thread.Sleep(5);}MainForm.PumpBrowserMessages();if(!t.IsCompleted)throw new TimeoutException("Offline UI task exceeded its deadline");t.GetAwaiter().GetResult();}
   static void RunUxTests() {
    // the elevated answer already carries the status after the operation
    string st="{\"State\":\"DNS active\",\"Code\":\"DNS_CONFIGURED_APPLICATION_NOT_TESTED\",\"JournalPhase\":\"Active\",\"Active\":true}";
@@ -595,7 +732,7 @@ namespace AgDns {
      form.JournalReader=()=>null;form.ShowJournalHintForTest();
      Check(form.BridgeEnabled&&form.BridgeText=="Подключить мост"&&form.StatusText=="Мост отключён","ux start: no journal at all -> «Подключить мост» at once");
      form.JournalReader=()=>"{\"Phase\":\"Restoring\"}";form.ShowJournalHintForTest();
-     Check(form.BridgeEnabled&&form.BridgeText=="Восстановить"&&form.RecoveryNeeded&&form.StatusText==CodeTable.Lookup("RECOVERY_REQUIRED").Title,"ux start: an unfinished operation -> «Восстановить» at once");
+     Check(form.BridgeEnabled&&form.BridgeText=="Восстановить"&&form.RecoveryNeeded&&form.StatusText=="Мост требует исправления","ux start: an unfinished operation -> repair state and Restore action at once");
      // the background status confirms without locking the window
      form.JournalReader=()=>"{\"Phase\":\"Active\"}";form.ShowJournalHintForTest();
      var gate=new System.Threading.Tasks.TaskCompletionSource<(int Code,string Output)>();
@@ -624,7 +761,7 @@ namespace AgDns {
    }
   }
 
-  // ---- restore that cannot hang silently: manual instruction from the journal, text only ----
+  // restore that cannot hang silently: manual instruction from the journal, text only
   static void RunRecoveryTests() {
    string owner=new string('a',32),g1="{82c33f7e-1111-4222-8333-444455556666}",g2="{a99b6302-aaaa-4bbb-8ccc-ddddeeeeffff}";
    string journal="{\"Schema\":1,\"Owner\":\""+owner+"\",\"Phase\":\"Restoring\",\"Targets\":[\"one.example.test\",\"two.example.test\"],\"Servers\":[\"179.254.166.171\",\"164.5.224.81\"],"+
@@ -651,7 +788,7 @@ namespace AgDns {
    Check(Program.GuardDeadline<=TimeSpan.FromSeconds(10)&&Program.GuardDeadline>=TimeSpan.FromSeconds(5),"recovery: the pre-check deadline is about ten seconds");
   }
 
-  // ---- review of the 1.4 code (session 1.5): defects found by reading Enable/Apply/Restore, Recovery, Connect, MainForm ----
+  // review of the 1.4 code (session 1.5): defects found by reading Enable/Apply/Restore, Recovery, Connect, MainForm
   static void RunReviewTests() {
    // R1: a profile switch makes two preflights; the engine and the waiting window need room for them, and the window waits longer than the child's own deadline.
    Check(Program.Deadline("enable")>=TimeSpan.FromSeconds(150)&&Program.Deadline("enable")>Program.Deadline("diagnose")&&Program.Deadline("restore")<=TimeSpan.FromSeconds(30),"review: enable has room for two preflights; restore stays short");
@@ -703,7 +840,7 @@ namespace AgDns {
    Check(steps!=null&&steps.Contains("«Восстановить»")&&!steps.Contains("«Отключить мост»"),"review: the manual steps tell to press «Восстановить» (the button of the recovery state)");
   }
 
-  // ---- 1.5-1: tray health check (fake probe / fake clock; nothing touches the system) ----
+  // 1.5-1: tray health check (fake probe / fake clock; nothing touches the system)
   sealed class FakeProbe:IHealthProbe {
    public string JournalText="{\"Schema\":1,\"Phase\":\"Active\"}";public Func<(int Code,string Output)> StatusFn;public Action OnStatus;
    public int StatusCalls,ProviderCalls,SystemCalls;public string[] LastServers;public string LastTemplate;public TimeSpan? LastDeadline;public ProviderProbe Prov;public bool ProviderThrows;public Dictionary<string,string[]> Sys=new Dictionary<string,string[]>();
@@ -836,7 +973,7 @@ namespace AgDns {
     Check(!form.FixVisible&&form.CurrentHealth==null,"health window: after the user disconnected, no repair is offered");
     form.SmokeHealth(new HealthReport{Kind=HealthKind.Drift,Code=HealthMonitor.ProviderDown,CanFix=true,Utc=DateTime.UtcNow});
     form.PresentForTest("{\"State\":\"DNS active\",\"Code\":\"DNS_CONFIGURED_APPLICATION_NOT_TESTED\",\"Active\":true,\"JournalPhase\":\"Active\",\"Servers\":[],\"Template\":\"x\"}");
-    Check(form.FixVisible&&form.CurrentHealth!=null&&form.StatusText==CodeTable.Lookup(HealthMonitor.ProviderDown).Title,"health window: a routine 'active' status does not repaint a drift the health check found as 'connected'");
+    Check(form.FixVisible&&form.CurrentHealth!=null&&form.StatusText=="Мост требует исправления","health window: a routine active status keeps bridge repair visible while endpoint failure stays local");
     form.SmokeHealth(new HealthReport{Kind=HealthKind.Drift,Code=HealthMonitor.NeedsManual,CanFix=false,Utc=DateTime.UtcNow});
     Check(!form.FixVisible,"health window: a drift that needs manual care does not offer 'Починить'");
     form.SmokeHealth(new HealthReport{Kind=HealthKind.Healthy,Code=HealthMonitor.Ok,Utc=DateTime.UtcNow});
@@ -850,7 +987,7 @@ namespace AgDns {
     form.PresentForTest(HealthyStatus);
     Check(form.BridgeActive,"review: precondition, the page shows a connected bridge");
     form.ApplyHealth(new HealthReport{Kind=HealthKind.Drift,Code=HealthMonitor.ProviderDown,CanFix=true,Utc=DateTime.UtcNow});
-    Check(!form.BridgeActive&&form.FixVisible,"review: a drift found on a 'connected' page turns the connected state (icon, colour, rows) off");
+    Check(form.BridgeActive&&form.FixVisible,"review: endpoint failure preserves applied bridge configuration and offers repair");
     form.ApplyHealth(new HealthReport{Kind=HealthKind.Healthy,Code=HealthMonitor.Ok,Utc=DateTime.UtcNow});
     Check(form.CurrentHealth==null&&form.BridgeActive&&form.StatusText=="Мост подключён"&&!form.FixVisible,"review: a later healthy report repaints the page as connected instead of leaving the drift text");
     form.ApplyHealth(new HealthReport{Kind=HealthKind.Drift,Code=HealthMonitor.ProviderDown,CanFix=true,Utc=DateTime.UtcNow});
@@ -858,13 +995,36 @@ namespace AgDns {
     Check(form.CurrentHealth==null&&form.BridgeActive&&form.StatusText=="Мост подключён","review: after a successful repair the page and tray say 'connected', not the stale drift");
     form.ApplyHealth(new HealthReport{Kind=HealthKind.Unknown,Code="HEALTH_UNKNOWN",Detail="WMI_NOT_RESPONDING",Utc=DateTime.UtcNow});
     Check(form.CollectReportInput().HealthKind=="Unknown","review: the report says the check failed (Unknown), not 'Healthy/Off'");
+    Check(form.EvidenceUncertain&&form.StatusInkForTest!=Theme.Green,"doctor evidence: unknown health invalidates earlier green presentation without disconnecting policy");
+    form.ApplyHealth(new HealthReport{Kind=HealthKind.Healthy,Code=HealthMonitor.Ok,Utc=DateTime.UtcNow.AddMinutes(-6)});
+    Check(form.EvidenceUncertain,"doctor evidence: a stale healthy report cannot clear unknown evidence");
+    form.ApplyHealth(new HealthReport{Kind=HealthKind.Healthy,Code=HealthMonitor.Ok,Utc=DateTime.UtcNow});
+    Check(!form.EvidenceUncertain&&form.StatusInkForTest!=Theme.Green,"doctor evidence: fresh full health clears network uncertainty without implying application readiness");
+    form.InvalidateNetworkEvidence();
+    Check(form.EvidenceUncertain&&form.BridgeActive,"doctor evidence: network invalidation withdraws proof while keeping the configured bridge and restore action");
+    form.ApplyHealth(new HealthReport{Kind=HealthKind.Healthy,Code=HealthMonitor.Ok,Light=true,Utc=DateTime.UtcNow});
+    Check(form.EvidenceUncertain,"doctor evidence: provider-only light success cannot restore full readiness");
+    var diagnosisContext=form.CaptureDiagnosticContext();
+    form.InvalidateNetworkEvidence();
+    const string diagnosticSuccess="{\"NrptEffective\":\"Policy + Windows resolver answers match\"}";
+    form.ApplyDiagnosticEvidence(diagnosticSuccess,diagnosisContext);
+    Check(form.EvidenceUncertain,"doctor evidence: delayed successful diagnosis cannot undo network invalidation");
+    form.ApplyDiagnosticEvidence(diagnosticSuccess,form.CaptureDiagnosticContext());
+    Check(!form.EvidenceUncertain,"doctor evidence: diagnosis from the current context can confirm fresh network evidence");
+    var changedPolicy=form.CaptureDiagnosticContext();form.JournalReader=()=>"{\"Phase\":\"Restored\"}";
+    form.ApplyDiagnosticEvidence(diagnosticSuccess,changedPolicy);
+    Check(form.EvidenceUncertain,"doctor evidence: diagnosis from an old policy cannot confirm the replacement context");
+    var mutationContext=form.CaptureDiagnosticContext();form.InvalidateNetworkEvidence();
+    form.SettleForTest(HealthyStatus,mutationContext.Revision,"synthetic-network");
+    Check(form.EvidenceUncertain,"doctor evidence: delayed mutation completion cannot restore evidence invalidated by a network change");
+
     form.Close();
    }
   }
 
-  // ---- 1.5-2: support report ----
+  // 1.5-2: support report
   static RedactionContext Ctx()=>new RedactionContext{UserName="ivan",MachineName="DESKTOP-IVAN01",DomainName="DESKTOP-IVAN01",ProfileDir=@"C:\Users\ivan",ExtraPaths=new[]{@"D:\Docs\ivan-docs"},Ssids=new[]{"HomeWiFi-5G","Café 5G"}};
-  // ---- quick provider check every 10 minutes: no engine, no CIM; Suspect -> Drift unchanged; the full check stays at 45 minutes ----
+  // Quick provider check every 10 minutes: no engine, no CIM; Suspect and Drift unchanged; the full check stays at 45 minutes
   static void RunLightHealthTests() {
    var o=new HealthOptions{Targets=new[]{"a.example.test","b.example.test"}};
    const string ActiveJournal="{\"Schema\":1,\"Phase\":\"Active\",\"Servers\":[\"212.109.195.91\",\"83.220.169.155\",\"10.0.0.7\"],\"Template\":\"https://x.example.test/dns-query\"}";
@@ -920,7 +1080,7 @@ namespace AgDns {
    now=t0;var s4=new HealthScheduler(()=>now,new HealthOptions());now=t0.AddMinutes(10);s4.TryStart(out _);now=t0.AddMinutes(10).AddSeconds(3);s4.Finished(HealthKind.Suspect,true);
    now=t0.AddMinutes(10).AddSeconds(3+59);Check(!s4.TryStart(out _),"health scheduler: the confirmation of a light suspicion waits a minute");
    now=t0.AddMinutes(10).AddSeconds(3+61);Check(s4.TryStart(out first)&&first==HealthTrigger.Light,"health scheduler: ...and is a light check again");
-   // the WMI backoff is not wiped by a light check (it never touches CIM): full Unknown, light Healthy, full Unknown again -> the second pause is 10 minutes, not 5
+   // the WMI backoff is not wiped by a light check (it never touches CIM): full Unknown, light Healthy, full Unknown again: the second pause is 10 minutes, not 5
    now=t0;var s7=new HealthScheduler(()=>now,new HealthOptions());s7.Trigger(HealthTrigger.Manual);s7.TryStart(out _);s7.Finished(HealthKind.Unknown);
    now=t0.AddMinutes(10);s7.TryStart(out first);bool wasLightRun=first==HealthTrigger.Light;s7.Finished(HealthKind.Healthy);
    now=t0.AddMinutes(12);s7.Trigger(HealthTrigger.Manual);s7.TryStart(out _);s7.Finished(HealthKind.Unknown);
@@ -947,7 +1107,7 @@ namespace AgDns {
     form.Close();
    }
   }
-  // Probe that turns the bridge off while the provider is being asked (the person pressed "Отключить" during the check).
+  // Probe that turns the bridge off while the provider is being asked (the user pressed "Отключить" during the check).
   sealed class SwitchingProbe:IHealthProbe {
    readonly FakeProbe inner;public SwitchingProbe(FakeProbe p){inner=p;}
    public string Journal()=>inner.Journal();
@@ -991,7 +1151,7 @@ namespace AgDns {
    input.CustomProfile=true;string customText=SupportReport.Build(input);input.CustomProfile=false;
    Check(customText.Contains("свой профиль")&&!customText.Contains("203.0.113.9")&&!customText.Contains("198.51.100.1")&&!customText.Contains("custom-host.example.test")&&withDiag.Contains("custom-host.example.test"),"report: a custom profile's name and every provider address are kept out of the diagnosis summary");
    input.DiagnosisJson="{ broken";Check(SupportReport.Build(input).Contains("не удалось разобрать"),"report: an unreadable diagnosis is said so, not dropped silently");
-   // end to end: personal data in every field never reaches the text the person sees
+   // end to end: personal data in every field never reaches the text the user sees
    var dirty=new ReportInput{GeneratedUtc=DateTime.UtcNow,ExeVersion="1.3.0",CatalogVersion="v",Os="Windows on DESKTOP-IVAN01",JournalPhase="Active",Profile="HomeWiFi-5G",HealthKind="Drift",HealthCode="X",
     Operations=new[]{new OperationEntry{Utc="u",Action="enable",Code="ERR at C:\\Users\\ivan\\Desktop\\a.txt",Ok=false,Profile="ivan"}},
     DiagnosisJson="{\"State\":\"s\",\"Code\":\"c\",\"Status\":{\"Resolver\":\"ivan on DESKTOP-IVAN01\",\"Protocol\":\"C:\\\\Users\\\\ivan\\\\x\",\"JournalPhase\":\"Active\",\"Servers\":[]},\"NrptEffective\":\"HomeWiFi-5G Café 5G\"}"};
@@ -1014,7 +1174,7 @@ namespace AgDns {
    }
   }
 
-  // ---- addresses without manual upkeep: bootstrap at connect time ----
+  // addresses without manual upkeep: bootstrap at connect time
   static T Sync<T>(Func<System.Threading.Tasks.Task<T>> f)=>System.Threading.Tasks.Task.Run(f).GetAwaiter().GetResult();
   sealed class FakeBootstrapNet:IBootstrapNet {
    public string[] SysIps=new string[0];public CrossResult[] Cross=new CrossResult[0];public HashSet<string> TlsOk=new HashSet<string>();public bool CrossThrows,SysThrows,CrossHang,DohHang;public string[] DohAsked=new string[0];public HashSet<string> DohOk=new HashSet<string>();
@@ -1061,7 +1221,7 @@ namespace AgDns {
    Check(!MainForm.TryParseCustom("","10.0.0.1","https://dns.example.test/dns-query",out _,out _,out _,out _)&&!MainForm.TryParseCustom("","","https://1.2.3.4/dns-query",out _,out _,out _,out _)&&!MainForm.TryParseCustom("","","http://dns.example.test/dns-query",out _,out _,out _,out _),"custom profile: private IPs, IP-literal hosts and plain http are rejected");
   }
 
-  // ---- resilient bootstrap: more resolvers, parallel, one budget ----
+  // resilient bootstrap: more resolvers, parallel, one budget
   static void RunResilientBootstrapTests() {
    const string tmpl="https://dns.example.test/dns-query";
    var fast=new BootstrapOptions{Budget=TimeSpan.FromMilliseconds(900),Discovery=TimeSpan.FromMilliseconds(300)};
@@ -1075,7 +1235,7 @@ namespace AgDns {
    var liar=new FakeBootstrapNet{SysThrows=true,Cross=new[]{new CrossResult{Via="https://dns.comss.one/dns-query",Server="83.220.169.155",Code="DNS_OK",Addresses=new[]{"212.109.195.77"}}}};
    liar.DohOk.Add("212.109.195.77");
    Check(Sync(()=>Bootstrap.PinnedAsync(tmpl,default,liar)).Length==0&&liar.DohAsked.Length==0,"bootstrap: an address from a catalog provider resolver without valid TLS for the name is not taken (DoH is not even asked)");
-   // budget: the check of the names hangs and ignores its token -> the search ends at the budget with an honest timeout, not "no address passed"
+   // budget: the check of the names hangs and ignores its token : the search ends at the budget with a timeout, not "no address passed"
    var hang=new FakeBootstrapNet{SysIps=new[]{"212.109.195.91"},DohHang=true};hang.TlsOk.Add("212.109.195.91");
    var sw=System.Diagnostics.Stopwatch.StartNew();
    Exception caught=null;try{Sync(()=>Bootstrap.PinnedAsync(tmpl,default,hang,fast));}catch(BootstrapTimeoutException e){caught=e;}
@@ -1093,7 +1253,7 @@ namespace AgDns {
    // an ordinary empty answer (resolvers answered, nothing usable) stays 'no address'
    var empty=new FakeBootstrapNet();
    Check(Sync(()=>Bootstrap.PinnedAsync(tmpl,default,empty,fast)).Length==0,"bootstrap: resolvers that answered with nothing usable are not a timeout");
-   // review: the person's own cancellation is neither an empty result nor a timeout, all the way up to the connect flow
+   // the user's own cancellation is neither an empty result nor a timeout, all the way up to the connect flow
    using(var cts=new CancellationTokenSource()){
     cts.Cancel();Exception ce=null;try{Sync(()=>Bootstrap.PinnedAsync(tmpl,cts.Token,hang,fast));}catch(Exception e){ce=e;}
     Check(ce!=null&&ce is OperationCanceledException&&!(ce is BootstrapTimeoutException),"bootstrap: a cancelled search throws a cancellation, not a timeout and not 'no address'");
@@ -1112,7 +1272,7 @@ namespace AgDns {
    Check(ProfileCatalog.BuiltIn.Profiles.All(p=>p.Servers.Take(LiveBootstrapNet.PinsPerCatalogProvider).All(ip=>catalogOnly.Any(r=>r.Server==ip))),"resolvers: every catalog provider is represented by up to two pins");
   }
 
-  // ---- last working addresses: pins -> saved (not older than 30 days, same preflight) -> bootstrap ----
+  // last working addresses: pins -> saved (not older than 30 days, same preflight) -> bootstrap
   static void RunSavedAddressTests() {
    const string tmpl="https://dns.example.test/dns-query";
    var pins=new[]{"193.233.112.67","193.233.112.68"};var savedIps=new[]{"83.220.169.155","195.133.25.16","212.109.195.93"};
@@ -1166,7 +1326,7 @@ namespace AgDns {
    Check(back.SavedAddrs.Count==1&&back.SavedAddrs[0].Servers.SequenceEqual(savedIps)&&SavedAddresses.FoundAt(back.SavedAddrs[0])==now&&JsonSerializer.Deserialize<AppSettings>("{\"SavedAddrs\":null}",Program.JsonOptions)!=null,"saved store: survives the settings file round trip");
   }
 
-  // ---- best-profile selection ----
+  // best-profile selection
   static object OkMulti(string host,int ms,string[] ips)=>new{ms,packet=Convert.ToBase64String(MakePacket(host,1234,b=>{foreach(string ip in ips)AppendARr(b,host,ip);},(ushort)ips.Length))};
   static Dictionary<string,object> ProfX(string id,string[] servers,object[] q1,object[] q2,Dictionary<string,bool> answerTls=null,bool experimental=false)=>new Dictionary<string,object>{["id"]=id,["template"]="https://"+id+".test/dns-query",["servers"]=servers,["tls"]=new object[]{new{ok=true,ms=40}},["queries"]=new Dictionary<string,object[]>{[Program.Targets[0]]=q1,[Program.Targets[1]]=q2},["answerTls"]=answerTls??new Dictionary<string,bool>(),["experimental"]=experimental};
   static void RunBestChoiceTests() {
@@ -1187,11 +1347,13 @@ namespace AgDns {
    var onlyWeak=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{halfdead,expSlow}}));
    Check(onlyWeak.Winner==null&&!onlyWeak.Results.Any(r=>r.Best),"best choice: when only weak profiles remain there is no recommendation");
    var withExp=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{healthy,expGood}}));
-   Check(withExp.Results.Single(r=>r.Id=="expgood").Verdict=="Good"&&withExp.Winner=="expgood","best choice: an experimental profile that earns the Good verdict can be recommended");
-   Check(ProfileCatalog.BuiltIn.Profiles.Where(p=>p.Experimental).Select(p=>p.Slot).OrderBy(x=>x).SequenceEqual(new[]{"P2","P5"}),"catalog: P2 and P5 carry the experimental flag, nothing else does");
+   Check(withExp.Results.Single(r=>r.Id=="expgood").Verdict=="Good"&&withExp.Results.Single(r=>r.Id=="expgood").Recommendable&&withExp.Winner=="healthy","best choice: a faster Good experimental profile is recommendable but does not displace a Good confirmed one");
+   var expOnly=Bench(JsonSerializer.Serialize(new{attempts=6,profiles=new object[]{halfdead,expGood}}));
+   Check(expOnly.Winner=="expgood","best choice: an experimental profile that earns the Good verdict is recommended when no confirmed profile is Good");
+   Check(ProfileCatalog.BuiltIn.Profiles.Where(p=>p.Experimental).Select(p=>p.Slot).OrderBy(x=>x).SequenceEqual(new[]{"P4","P7","P8"}),"catalog: geohide.ru (degraded), dns.zapret.moe and eu.geohide.ru (new) carry the experimental flag, nothing else does");
   }
 
-  // ---- switch to a working provider: offered, never silent, trust first, experimental never offered ----
+  // switch to a working provider: offered, never silent, trust first, experimental never offered
   static void RunSwitchTests() {
    string d1=Program.Targets[0],d2=Program.Targets[1];
    var sv=new[]{"193.233.112.67","193.233.112.68"};
@@ -1229,12 +1391,12 @@ namespace AgDns {
 
    // pool: pins plus fresh saved addresses, no experimental profile
    var cat=ProfileCatalog.BuiltIn;var now=new DateTime(2026,10,12,12,0,0,DateTimeKind.Utc);
-   var geo=cat.Find("geohide.ru");var saved=new List<SavedAddr>();
+   var geo=cat.Find("dns.bezmezhau.com");var saved=new List<SavedAddr>();
    SavedAddresses.Put(saved,geo.Template,new[]{"212.109.195.91",geo.Servers[0]},now.AddDays(-2));
    SavedAddresses.Put(saved,cat.Find("dns.comss.one").Template,new[]{"212.109.195.92"},now.AddDays(-40));
    var pool=ProviderSwitch.Pool(cat,saved,now);
-   Check(pool.All(p=>!p.Experimental)&&!pool.Any(p=>p.Id=="xbox-dns.ru"||p.Id=="dns.dns-ai.ru")&&pool.Count==cat.Profiles.Count(x=>!x.Experimental),"switch pool: the experimental profiles of the catalog are left out");
-   var geoPool=pool.Single(p=>p.Id=="geohide.ru");
+   Check(pool.All(p=>!p.Experimental)&&!pool.Any(p=>p.Id=="geohide.ru"||p.Id=="dns.zapret.moe"||p.Id=="eu.geohide.ru")&&pool.Count==cat.Profiles.Count(x=>!x.Experimental),"switch pool: the experimental profiles of the catalog are left out");
+   var geoPool=pool.Single(p=>p.Id=="dns.bezmezhau.com");
    Check(geoPool.Servers.Take(geo.Servers.Length).SequenceEqual(geo.Servers)&&geoPool.Servers.Contains("212.109.195.91")&&geoPool.Servers.Distinct().Count()==geoPool.Servers.Length,"switch pool: pins first, then the saved addresses of the profile, without duplicates");
    Check(!pool.Single(p=>p.Id=="dns.comss.one").Servers.Contains("212.109.195.92"),"switch pool: a saved entry older than 30 days is not measured");
 
@@ -1253,15 +1415,15 @@ namespace AgDns {
    var offered=CodeTable.Lookup("PROVIDER_SWITCH_OFFERED");var none=CodeTable.Lookup("NO_WORKING_PROVIDER");
    Check(CodeTable.Known("PROVIDER_SWITCH_OFFERED")&&CodeTable.Known("NO_WORKING_PROVIDER")&&offered.Kind==ActionKind.Switch&&none.Text.Contains("Мост не менялся"),"switch: both new codes are in the message table with an action; 'no working provider' says the bridge is untouched");
 
-   // window: the offer is a button in the place of 'Починить', and goes away with the person's own actions
+   // window: the offer is a button in the place of 'Починить', and goes away with the user's own actions
    using(var form=new MainForm(true)) {
     form.Show();Application.DoEvents();
     form.SmokeState("switch");
-    Check(form.AltVisible&&!form.FixVisible&&form.AltText.StartsWith("Подключить через ")&&form.StatusText==offered.Title&&!form.BridgeActive,"switch window: the offer shows one button 'Подключить через …' and applies nothing (bridge stays off)");
+    Check(form.AltVisible&&!form.FixVisible&&form.AltText.StartsWith("Подключить через ")&&form.StatusText=="Мост отключён"&&!form.BridgeActive,"switch window: the offer stays under a disconnected bridge with one explicit apply action");
     form.SettleForTest("{\"State\":\"x\",\"Status\":{\"JournalPhase\":\"Restored\"}}");
     Check(!form.AltVisible,"switch window: the person's own operation clears the offer");
     form.SmokeState("noprovider");
-    Check(!form.AltVisible&&form.StatusText==none.Title&&!form.BridgeActive,"switch window: 'no working provider' shows the status and no button");
+    Check(!form.AltVisible&&form.StatusText=="Мост отключён"&&!form.BridgeActive&&form.SubText.Contains(none.Text),"switch window: unavailable provider stays subordinate to the disconnected bridge state");
     form.SmokeState("switch");form.SmokeState("idle");
     Check(!form.AltVisible&&!form.FixVisible,"switch window: back to the plain state, no stale button");
     // the lifecycle of an offer made by a failed repair on a bridge that is still configured (review: a stale offer hid 'Починить')
@@ -1290,7 +1452,7 @@ namespace AgDns {
    }
   }
 
-  // ---- non-443 DoH port ----
+  // non-443 DoH port
   static void RunPortTests() {
    var listener=new System.Net.Sockets.TcpListener(IPAddress.Loopback,0);listener.Start();
    try {
@@ -1379,17 +1541,17 @@ namespace AgDns {
    Check(parsedAAAA.Addresses.Length==1&&parsedAAAA.Addresses[0]=="2606:4700::1111","mixed packet parses only Type 28 AAAA record");
 
    // CLI Argument Parsing and Validation
-   var pNet=Program.ParseNetworkArgs(new[]{"--network","--servers","185.185.185.185,185.185.185.186","--template","https://xbox-dns.ru/dns-query"});
-   Check(pNet.Servers!=null&&pNet.Servers.Length==2&&pNet.Servers[0]=="185.185.185.185"&&pNet.Servers[1]=="185.185.185.186"&&pNet.Template=="https://xbox-dns.ru/dns-query","CLI parses custom IPv4 servers and template");
+   var pNet=Program.ParseNetworkArgs(new[]{"--network","--servers","185.185.185.185,185.185.185.186","--template","https://custom.test/dns-query"});
+   Check(pNet.Servers!=null&&pNet.Servers.Length==2&&pNet.Servers[0]=="185.185.185.185"&&pNet.Servers[1]=="185.185.185.186"&&pNet.Template=="https://custom.test/dns-query","CLI parses custom IPv4 servers and template");
 
    var pNet6=Program.ParseNetworkArgs(new[]{"--network","--servers","2606:4700::1111,2001:4860::8888","--plain"});
    Check(pNet6.Servers!=null&&pNet6.Servers.Length==2&&pNet6.Servers[0]=="2606:4700::1111"&&pNet6.Plain,"CLI parses IPv6 servers and --plain");
 
-   var pProf=Program.ParseNetworkArgs(new[]{"--network","--profile","P2"});
-   Check(pProf.Servers!=null&&pProf.Servers.Contains("185.185.185.185")&&pProf.Template=="https://xbox-dns.ru/dns-query","CLI binds profile P2 servers and template");
+   var pProf=Program.ParseNetworkArgs(new[]{"--network","--profile","P6"});
+   Check(pProf.Servers!=null&&pProf.Servers.SequenceEqual(ProfileCatalog.BuiltIn.Find("P6").Servers)&&pProf.Template=="https://dns.bezmezhau.com/dns-query","CLI binds profile P6 servers and template");
 
-   var pProfOvr=Program.ParseNetworkArgs(new[]{"--network","--profile","P2","--template","https://custom.test/dns-query"});
-   Check(pProfOvr.Template=="https://custom.test/dns-query"&&pProfOvr.Servers.Contains("185.185.185.185"),"CLI profile allows explicit template override");
+   var pProfOvr=Program.ParseNetworkArgs(new[]{"--network","--profile","P6","--template","https://custom.test/dns-query"});
+   Check(pProfOvr.Template=="https://custom.test/dns-query"&&pProfOvr.Servers.SequenceEqual(ProfileCatalog.BuiltIn.Find("P6").Servers),"CLI profile allows explicit template override");
 
    // Argument Rejection on Invalid Inputs
    Reject(()=>Program.ParseNetworkArgs(new[]{"--network","--servers"}),"missing value for --servers");
@@ -1456,7 +1618,7 @@ namespace AgDns {
    string realKey=AutostartHelper.KeyName;const string isoKey=@"Software\AgDnsTest\Run";
    Microsoft.Win32.Registry.CurrentUser.CreateSubKey(isoKey).Dispose();AutostartHelper.KeyName=isoKey;
    try {
-    string testExe=@"C:\TestPath\AntigravityDnsUnlocker.exe";
+    string testExe=Environment.ProcessPath;
     AutostartHelper.SetEnabled(true,testExe);
     Check(AutostartHelper.IsEnabled(testExe),"Autostart enabled detects valid target path");
     Check(!AutostartHelper.IsEnabled(@"C:\OtherPath\DifferentApp.exe"),"Autostart rejects non-matching executable path");
@@ -1473,10 +1635,10 @@ namespace AgDns {
     Program.ValidateCliArgs(new[]{"--autostart-disable"});
     Check(true,"CLI argument validation accepts autostart flags");
 
-   // Polish Verification (Robustness, Mutex Abandonment, Quoted Arguments)
+   // Mutex abandonment, robustness and quoted arguments
    {
-    var parsedQuoted=Program.ParseNetworkArgs(new[]{"--network","--template","\"https://xbox-dns.ru/dns-query\"","--profile","\"P2\""});
-    Check(parsedQuoted.Template=="https://xbox-dns.ru/dns-query"&&parsedQuoted.Servers!=null&&parsedQuoted.Servers.Contains("185.185.185.185"),"CLI accepts safely quoted template and profile arguments");
+    var parsedQuoted=Program.ParseNetworkArgs(new[]{"--network","--template","\"https://dns.zapret.moe/dns-query\"","--profile","\"P7\""});
+    Check(parsedQuoted.Template=="https://dns.zapret.moe/dns-query"&&parsedQuoted.Servers!=null&&parsedQuoted.Servers.Contains("83.217.211.149"),"CLI accepts safely quoted template and profile arguments");
 
     string mutName="Local\\TestSingleInstance_"+Guid.NewGuid().ToString("N");
     using(var first=new Mutex(true,mutName,out bool firstNew))
@@ -1489,8 +1651,10 @@ namespace AgDns {
    }
    }finally{AutostartHelper.KeyName=realKey;try{Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\AgDnsTest",false);}catch{}}
 
-   RunCatalogTests();RunScriptStoreTests();RunInstallTests();RunBenchmarkTests();RunBestChoiceTests();RunSwitchTests();RunConnectTests();RunResilientBootstrapTests();RunSavedAddressTests();RunRecoveryTests();RunReviewTests();RunHealthTests();RunLightHealthTests();RunReportTests();RunMessageTests();RunTextFitTests();RunGeminiTests();RunUxTests();RunFinalUiTests();RunScopeLangTests();RunBrowserTests();RunUiV3Tests();RunUiV4Tests();RunPortTests();
+   RunSignedCatalogContracts();RunAssistedContracts();RunScenarioContracts();RunReliabilityTests();RunCatalogTests();RunContractTests();RunScriptStoreTests();RunInstallTests();RunBenchmarkTests();RunBenchmarkBudgetTests();RunBestChoiceTests();RunSwitchTests();RunConnectTests();RunResilientBootstrapTests();RunSavedAddressTests();RunRecoveryTests();RunReviewTests();RunHealthTests();RunLightHealthTests();RunReportTests();RunMessageTests();RunTextFitTests();RunGeminiTests();RunUxTests();RunFinalUiTests();RunScopeLangTests();RunBrowserTests();RunUiV3Tests();RunUiV4Tests();RunPortTests();RunDoctorTests();RunAutonomyTests();RunReleaseTests();
 
+   RunCloseoutUiTests();
+   RunStage01TrustTests();RunStage01SystemTests();RunStage01BenchmarkTests();RunStage01UiTests();RunStage06Tests();RunStage07Tests();RunElevatedStartupTests();
    Console.WriteLine("OFFLINE_WIRE_PASS "+passed);return 0;
   }catch(Exception e){Console.WriteLine(e.Message);return 1;}}
  }

@@ -1,23 +1,26 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace AgDns {
- // --ui-surfaces: the Windows surfaces the window uses that the self-test does not open (tray menu, tray icon, message box, save dialog, tooltip,
- // clipboard). The release build is trimmed, and WinForms is not officially trim-compatible, so each of them is opened once for real.
+namespace AntigravityGeminiDns {
+ // ui-surfaces: the Windows surfaces the window uses that the self-test does not open (tray menu, tray icon, message box, save dialog, tooltip,
+ // clipboard). Each surface is opened once for real in the canonical untrimmed release.
  // Dialogs are closed by a timer; the clipboard text is put back. Nothing else is touched.
- public static class UiSurfaceCheck {
+ public static partial class UiSurfaceCheck {
   delegate bool EnumProc(IntPtr hwnd,IntPtr lParam);
   [DllImport("user32.dll")]static extern bool EnumThreadWindows(uint threadId,EnumProc proc,IntPtr lParam);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetClassName(IntPtr hwnd,System.Text.StringBuilder name,int max);
   [DllImport("user32.dll")]static extern bool IsWindowVisible(IntPtr hwnd);
   [DllImport("user32.dll")]static extern bool PostMessage(IntPtr hwnd,uint msg,IntPtr w,IntPtr l);
   [DllImport("kernel32.dll")]static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")]static extern int GetGuiResources(IntPtr process,int flags);
 
-  static int failed;
-  static void Step(string name,Action a){try{a();Console.WriteLine("PASS ui surface: "+name);}catch(Exception e){failed++;Console.WriteLine("FAIL ui surface: "+name+" — "+e.GetType().Name+": "+e.Message);}}
+  static int failed,skipped;
+  sealed class SurfaceSkip:Exception{public SurfaceSkip(string reason):base(reason){}}
+  static void Step(string name,Action a){try{a();Console.WriteLine("PASS ui surface: "+name);}catch(SurfaceSkip e){skipped++;Console.WriteLine("SKIP ui surface: "+name+" — "+e.Message);}catch(Exception e){failed++;Console.WriteLine("FAIL ui surface: "+name+" — "+e.GetType().Name+": "+e.Message);}}
 
   // Closes the first visible dialog (#32770) of this thread a moment after it opened.
   static Timer Closer(){
@@ -27,9 +30,10 @@ namespace AgDns {
    t.Start();return t;
   }
 
-  // --ui-stress: the real paint path under the conditions of a live window that the snapshots do not have: per-monitor DPI changes (a window restored on another
+  // ui-stress: the real paint path under the conditions of a live window that the snapshots do not have: per-monitor DPI changes (a window restored on another
   // monitor), animation, mouse messages, repeated repaints. Works on defaults (nothing is read from or written to the owner's files). Prints UI_STRESS_PASS or _FAIL.
   [StructLayout(LayoutKind.Sequential)]struct Rc{public int L,T,R,B;}
+  [DllImport("user32.dll")]static extern bool GetClientRect(IntPtr window,out Rc rectangle);
   [DllImport("user32.dll")]static extern bool AdjustWindowRectExForDpi(ref Rc rc,uint style,bool menu,uint exStyle,uint dpi);
   [DllImport("user32.dll")]static extern int GetWindowLong(IntPtr hwnd,int index);
   [DllImport("user32.dll")]static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr w,IntPtr l);
@@ -43,15 +47,18 @@ namespace AgDns {
    IntPtr mem=Marshal.AllocHGlobal(Marshal.SizeOf<Rc>());Marshal.StructureToPtr(rc,mem,false);
    var want=new Size((int)Math.Round(form.ClientSize.Width*(double)dpi/cur),(int)Math.Round(form.ClientSize.Height*(double)dpi/cur));
    SendMessage(form.Handle,0x02E0,(IntPtr)((dpi<<16)|dpi),mem);Marshal.FreeHGlobal(mem);Application.DoEvents();
-   if(form.ClientSize!=want){form.ClientSize=want;Application.DoEvents();}   // the frame's width can be a pixel or two off the real one: the client area is exactly the scaled design
+    // MainForm has its own monitor-capped fixed viewport in WM_DPICHANGED. Forcing
+    // the uncapped design back afterward defeats its size constraints on short monitors.
+    if(form is not MainForm&&form.ClientSize!=want){form.ClientSize=want;Application.DoEvents();}   // framed auxiliary forms may need a one-pixel client correction
   }
   static void Pump(int ms){var sw=System.Diagnostics.Stopwatch.StartNew();while(sw.ElapsedMilliseconds<ms){Application.DoEvents();System.Threading.Thread.Sleep(8);}}
   public static int Stress(){
    int exceptions=0;string first=null;
    Application.ThreadException+=(s,e)=>{exceptions++;if(first==null)first=e.Exception.GetType().Name+": "+e.Exception.Message+Environment.NewLine+e.Exception.StackTrace;};
    using(var form=new MainForm(true)){
-    form.SetScopeForTest(MainForm.BridgeScope.Google);   // as the owner's window starts: the saved scope is «+ Браузер», so the levels begin fully lit
-    form.Show();Pump(200);Motion.Enabled=true;var seg=form.ScopeSegmented;
+    form.SetScopeForTest(MainForm.BridgeScope.All);   // as the owner's window starts: the saved scope is «+ Браузер», so the levels begin fully lit
+    form.Show();Pump(200);Motion.Enabled=true;var seg=form.ScopePicker;
+    int initialGdi=GetGuiResources(System.Diagnostics.Process.GetCurrentProcess().Handle,0);
     // shown from the tray the way the program does it: hidden, then a fade-in (the window is layered while its opacity changes)
     for(int i=0;i<3;i++){form.Hide();Pump(150);form.ShowWindow();for(int j=0;j<8;j++){seg.Invalidate();seg.Update();Pump(40);}}
     Pump(300);
@@ -87,14 +94,47 @@ namespace AgDns {
      seg.Busy=false;form.ApplyLanguage(false);form.SelectTab(0);Pump(100);
     }
     Console.WriteLine("language rounds done: paint failures "+seg.PaintFailures+" exceptions "+exceptions);
+    foreach(var units in new[]{new Size(420,540),new Size(620,900),new Size(420,600)}){
+     var fixedSize=form.Size;float k=form.DeviceDpi/96f;form.ClientSize=new Size((int)(units.Width*k),(int)(units.Height*k));Pump(120);
+     form.SystemCommandForTest(0xF030);Pump(30);
+     if(form.Size!=fixedSize||!form.FixedWindowForTest){exceptions++;Console.WriteLine("FIXED_WINDOW_FAIL "+units+" actual="+form.Size+" expected="+fixedSize);}
+     for(int tab=0;tab<form.TabCount;tab++){
+      form.SelectTab(tab);Pump(30);
+      var nav=form.NavControl;
+      GetClientRect(form.Handle,out var client);
+      if(nav.Bottom>client.B||nav.Left<0||nav.Right>client.R){exceptions++;Console.WriteLine("RESIZE_FAIL navigation "+units+" tab "+tab+" client="+form.ClientSize+" bounds="+form.Bounds+" minimum="+form.MinimumSize+" nav="+nav.Bounds+" dpi="+form.DeviceDpi);}
+     }
+     form.SelectTab(0);form.SmokeState("idle");Pump(50);
+     string captures=Environment.GetEnvironmentVariable("AGDNS_UI_CAPTURE");
+     void Capture(string name){if(string.IsNullOrEmpty(captures))return;System.IO.Directory.CreateDirectory(captures);using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));form.OverlayDetails(bitmap);bitmap.Save(System.IO.Path.Combine(captures,name+"-"+units.Width+"x"+units.Height+".png"));}}
+     Capture("resize");
+     form.ShowCustomPanelForTest();Pump(40);Capture("custom");
+     foreach(Control control in form.Controls)if(control is RoundPanel&&control.Visible&&control.Bottom>form.NavControl.Top){exceptions++;Console.WriteLine("RESIZE_FAIL custom overlay covers navigation "+units);}
+     form.KeyForTest(Keys.Escape);
+     form.ShowBrowserPanelForTest(false);Pump(120);Capture("browser");
+     var browser=form.BrowserPanelControls.OfType<RoundPanel>().First();
+     var list=form.BrowserPanelControls.First(c=>c is BrowserList);
+     browser.AutoScrollPosition=Point.Empty;int listTop=list.Top;
+     browser.AutoScrollPosition=new Point(0,100);
+     foreach(string id in new[]{"chrome","edge"}){form.SelectBrowserForTest(id);Pump(250);}
+     browser.AutoScrollPosition=Point.Empty;Pump(40);
+     if(list.Top!=listTop){exceptions++;Console.WriteLine("RESIZE_FAIL browser list moved after scrolled selection "+listTop+" -> "+list.Top);}
+     browser.AutoScrollPosition=new Point(0,100);Capture("browser-scrolled");
+     foreach(Control control in form.Controls)if(control is RoundPanel&&control.Visible&&control.Bottom>form.NavControl.Top){exceptions++;Console.WriteLine("RESIZE_FAIL browser overlay covers navigation "+units);}
+     form.BrowserCancelForTest();
+    }
+    Console.WriteLine("resize rounds done: exceptions "+exceptions);
+    Console.WriteLine("UI_GDI_HANDLES initial="+initialGdi+" after_interactions="+GetGuiResources(System.Diagnostics.Process.GetCurrentProcess().Handle,0));
     form.Close();
     bool ok=exceptions==0&&seg.PaintFailures==0;
+    ok=ResourceSoak()&&ok;
     if(first!=null)Console.WriteLine(first);
     Console.WriteLine(ok?"UI_STRESS_PASS":"UI_STRESS_FAIL");return ok?0:1;
    }
   }
 
   public static int Run(){
+   failed=skipped=0;
    using(var form=new Form{StartPosition=FormStartPosition.Manual,Location=new Point(-3000,-3000),ShowInTaskbar=false,Size=new Size(300,200)}){
     form.Show();Application.DoEvents();
     Step("tray menu (dark renderer) opens and closes",()=>{
@@ -106,25 +146,30 @@ namespace AgDns {
      }
     });
     Step("profile drop-down opens with a ping in its rows and takes a new one while open",()=>{
-     using(var ps=new PillSelect{Bounds=new Rectangle(10,10,300,36)}){
+     // A native drop-down requires an active on-screen owner; an off-screen owner can close it during activation.
+     // Give all three rows room here; short-view geometry/scrolling is covered by the UI tests.
+     form.ClientSize=new Size(400,400);
+     form.Location=Screen.PrimaryScreen.WorkingArea.Location+new Size(30,30);form.Activate();Pump(100);
+     using(var ps=new PillSelect{Bounds=new Rectangle(10,10,270,36)}){
       ps.Items.AddRange(new[]{"geohide.ru · P4","dns.example · P2","other.example · P3"});ps.SetSelectedSilently(0);int opened=0;ps.DropDownOpening+=(_,__)=>opened++;
       ps.Detail=i=>i==0?("12 мс",Theme.Green):("",Color.Empty);form.Controls.Add(ps);Application.DoEvents();
       ps.OpenForTest();Application.DoEvents();var m=ps.OpenMenu;
       try{
-       if(m==null||!m.Visible||m.Items.Count!=3||opened!=1)throw new InvalidOperationException("the list did not open");
+       if(m==null||!m.Visible||m.Items.Count!=3||opened!=1)throw new InvalidOperationException("the list did not open: menu="+(m!=null)+" visible="+(m?.Visible??false)+" items="+(m?.Items.Count??0)+" opening="+opened);
        int Colour(Color c,ToolStripItem it){using(var bmp=new Bitmap(Math.Max(1,m.Width),Math.Max(1,m.Height))){m.DrawToBitmap(bmp,new Rectangle(0,0,bmp.Width,bmp.Height));int n=0;for(int y=it.Bounds.Top;y<it.Bounds.Bottom&&y<bmp.Height;y++)for(int x=it.Bounds.Left;x<it.Bounds.Right&&x<bmp.Width;x++){var p=bmp.GetPixel(x,y);if(Math.Abs(p.R-c.R)+Math.Abs(p.G-c.G)+Math.Abs(p.B-c.B)<40)n++;}return n;}}
        if(Colour(Theme.Green,m.Items[0])<15)throw new InvalidOperationException("no dot in the row that has a ping");
        if(Colour(Theme.Green,m.Items[1])!=0)throw new InvalidOperationException("a dot in a row without a ping");
        ps.Detail=i=>i==1?("320 мс",Theme.Amber):("",Color.Empty);ps.RefreshDetails();Application.DoEvents();
-       if(Colour(Theme.Amber,m.Items[1])<15||Colour(Theme.Green,m.Items[0])!=0)throw new InvalidOperationException("the list did not take the new ping while open");
+       int amber=Colour(Theme.Amber,m.Items[1]),green=Colour(Theme.Green,m.Items[0]);
+       if(amber<15||green!=0)throw new InvalidOperationException("the list did not take the new ping while open: amber="+amber+" oldGreen="+green+" menu="+m.Size+" row="+m.Items[1].Bounds);
       }finally{m?.Close();Application.DoEvents();form.Controls.Remove(ps);}
      }
     });
     Step("tray icon with its menu is created and removed",()=>{
-     using(var icon=Branding.ToIcon(32,true))using(var menu=new ContextMenuStrip())using(var tray=new NotifyIcon{Icon=icon,Text="Antigravity DNS",Visible=false,ContextMenuStrip=menu}){menu.Items.Add("x");Application.DoEvents();}
+     using(var icon=Branding.ToIcon(32,true))using(var menu=new ContextMenuStrip())using(var tray=new NotifyIcon{Icon=icon,Text="Antigravity-Gemini DNS",Visible=false,ContextMenuStrip=menu}){menu.Items.Add("x");Application.DoEvents();}
     });
     Step("tooltip shows and hides",()=>{using(var tip=new ToolTip()){tip.Show("Проверка",form,5,5,300);Application.DoEvents();tip.Hide(form);}});
-    Step("message box opens and closes",()=>{using(Closer()){var r=MessageBox.Show(form,"Проверка окна сообщения.","Antigravity DNS",MessageBoxButtons.OK,MessageBoxIcon.Information);}});
+    Step("message box opens and closes",()=>{using(Closer()){var r=MessageBox.Show(form,"Проверка окна сообщения.","Antigravity-Gemini DNS",MessageBoxButtons.OK,MessageBoxIcon.Information);}});
     Step("save dialog opens and closes",()=>{using(Closer())using(var sfd=new SaveFileDialog{Title="Проверка",Filter="Текстовый файл (*.txt)|*.txt",FileName="check.txt",OverwritePrompt=true}){var r=sfd.ShowDialog(form);if(r!=DialogResult.Cancel)throw new InvalidOperationException("unexpected result "+r);}});
     Step("clipboard text round-trip (previous content put back)",()=>{
      // Copy whatever is on the clipboard into a private data object first; if any format cannot be read, nothing is touched.
@@ -132,7 +177,7 @@ namespace AgDns {
      var current=Clipboard.GetDataObject();
      if(current!=null){
       saved=new DataObject();
-      foreach(string f in current.GetFormats(false)){object v;try{v=current.GetData(f,false);}catch(Exception){Console.WriteLine("  (clipboard format '"+f+"' cannot be copied: round-trip skipped, nothing touched)");return;}if(v!=null)saved.SetData(f,false,v);}
+      foreach(string f in current.GetFormats(false)){object v;try{v=current.GetData(f,false);}catch(Exception){throw new SurfaceSkip("clipboard format cannot be copied; nothing touched");}if(v!=null)saved.SetData(f,false,v);}
      }
      Clipboard.SetText("agdns-ui-check");
      string got=Clipboard.GetText();
@@ -142,6 +187,7 @@ namespace AgDns {
     Step("support report preview opens and closes",()=>{using(var dlg=new ReportPreviewForm("Проверка")){dlg.StartPosition=FormStartPosition.Manual;dlg.Location=new Point(-3000,-3000);dlg.Show();Application.DoEvents();dlg.Close();}});
     form.Close();
    }
+   Console.WriteLine("UI_SURFACES_COUNTS failed="+failed+" skipped="+skipped);
    Console.WriteLine(failed==0?"UI_SURFACES_PASS":"UI_SURFACES_FAIL "+failed);
    return failed==0?0:1;
   }

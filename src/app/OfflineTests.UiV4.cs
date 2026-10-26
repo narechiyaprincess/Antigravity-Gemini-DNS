@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // UI tests: autostart, immediate scope changes, profile latency,
  // the browser screen (order, one-sentence verdict, «Назад»), the language switched without a restart, the symmetric highlight of the tab bar.
  public static partial class OfflineTests {
@@ -15,70 +15,82 @@ namespace AgDns {
   static bool IsPill(Bitmap b,int x,int y){var c=b.GetPixel(x,y);return Math.Abs(c.R-Theme.NavSel.R)+Math.Abs(c.G-Theme.NavSel.G)+Math.Abs(c.B-Theme.NavSel.B)<=6;}
 
   static void RunUiV4Tests() {
-   RunV4NavTests();RunV4ControlTests();RunV4ScaleTests();RunV4AutostartUiTests();RunV4ScopeTests();RunV4LanguageTests();RunV4BrowserOrderTests();RunV4ReviewTests();
+   RunVisualBrandTests();RunCompactDesignTests();
+   RunS11Tests();RunV4NavTests();RunV4ControlTests();RunV4ScaleTests();RunV4AutostartUiTests();RunV4ProfileChoiceTests();RunV4ScopeTests();RunV4LanguageTests();RunV4BrowserOrderTests();RunV4ReviewTests();
   }
 
-  // ---- 6. the tab bar: the highlight is the same size for every tab, whole pixels, centred on its cell, concentric with the bar; the icon and the word are centred on it ----
+  // The selected navigation sector meets the panel edges. Validate actual pixels,
+  // including first/last sectors, fractional DPI and both label sets.
   static void RunV4NavTests() {
-   bool en0=L.En;
+   bool en0=L.En;var bad=new List<string>();int shots=0;
    try {
-    var bad=new List<string>();int shots=0;
     foreach(bool en in new[]{false,true}){
      L.En=en;
      foreach(float k in new[]{1f,1.25f,1.5f,1.75f,2f}){
-      int w=(int)Math.Round(352*k),h=(int)Math.Round(58*k);float cell=w/(float)NavBar.Count;var widths=new List<int>();var heights=new List<int>();
+      int w=(int)Math.Round(420*k),h=(int)Math.Round(60*k);
       for(int sel=0;sel<NavBar.Count;sel++){
-       using(var bmp=new Bitmap(w,h))using(var g=Graphics.FromImage(bmp)){
-        g.Clear(Theme.Bg);NavBar.Paint(g,w,h,k,sel);shots++;
-        string who=(en?"en ":"ru ")+(int)(k*96)+"% tab"+sel;
-        float cl=sel*cell,cr=(sel+1)*cell,cc=(cl+cr)/2f;int mid=h/2;
-        int l=-1,r=-1;for(int x=(int)Math.Floor(cl);x<(int)Math.Ceiling(cr)&&x<w;x++)if(IsPill(bmp,x,mid)){if(l<0)l=x;r=x;}
-        if(l<0){bad.Add(who+" no highlight");continue;}
-        int pw=r-l+1;widths.Add(pw);
-        double centre=(l+r+1)/2.0;if(Math.Abs(centre-cc)>1.0)bad.Add(who+" highlight off centre by "+(centre-cc).ToString("0.0"));
-        double gapL=l-cl,gapR=cr-1-r;if(Math.Abs(gapL-gapR)>1.5)bad.Add(who+" gaps "+gapL.ToString("0.0")+" / "+gapR.ToString("0.0"));
-        int cx=(int)Math.Round(centre);int top=-1,bot=-1;for(int y=0;y<h;y++)if(IsPill(bmp,cx,y)){if(top<0)top=y;bot=y;}
-        heights.Add(bot-top+1);if(Math.Abs(top-(h-1-bot))>1)bad.Add(who+" top/bottom gaps "+top+" / "+(h-1-bot));
-        if(top<(int)Math.Floor(3*k)||l-(int)cl<(int)Math.Floor(3*k))bad.Add(who+" highlight too close to the bar's edge");
-        // rounded, not cut square: the corner pixel is background, and the four corners hold the same amount of colour
-        int rad=(int)(12*k);int Count(int x0,int y0){int n=0;for(int y=y0;y<y0+rad;y++)for(int x=x0;x<x0+rad;x++)if(IsPill(bmp,x,y))n++;return n;}
-        int a=Count(l,top),b=Count(r+1-rad,top),c=Count(l,bot+1-rad),d=Count(r+1-rad,bot+1-rad);
-        if(IsPill(bmp,l,top)||IsPill(bmp,r,top)||IsPill(bmp,l,bot)||IsPill(bmp,r,bot))bad.Add(who+" a corner is square");
-        int ctol=Math.Max(8,(int)(6*k));if(Math.Abs(a-b)>ctol||Math.Abs(c-d)>ctol){bad.Add(who+" corners differ "+a+","+b+","+c+","+d);}   // left against right (the word may reach the lower corners), and not square
-        // the icon (upper half) and the word (lower half) are centred on the highlight and sit inside it
-        int InkMin(int y0,int y1,out int max,out int minY,out int maxY){int mn=int.MaxValue;max=-1;minY=int.MaxValue;maxY=-1;for(int y=y0;y<y1;y++)for(int x=(int)cl+1;x<(int)cr-1&&x<w;x++){var px=bmp.GetPixel(x,y);if((px.R+px.G+px.B)/3>=95){mn=Math.Min(mn,x);max=Math.Max(max,x);minY=Math.Min(minY,y);maxY=Math.Max(maxY,y);}}return mn;}
-        int iMax,iMinY,iMaxY,wMax,wMinY,wMaxY;int iMin=InkMin(top,top+(bot-top)*45/100,out iMax,out iMinY,out iMaxY),wMin=InkMin(top+(bot-top)*55/100,bot+1,out wMax,out wMinY,out wMaxY);
-        if(iMax<0||wMax<0){bad.Add(who+" icon or word missing");continue;}
-        double ic=(iMin+iMax+1)/2.0,wc=(wMin+wMax+1)/2.0,tol=1.5+.5*k;
-        if(Math.Abs(ic-centre)>tol)bad.Add(who+" icon off centre by "+(ic-centre).ToString("0.0"));
-        if(Math.Abs(wc-centre)>tol)bad.Add(who+" word off centre by "+(wc-centre).ToString("0.0"));
-        if(wMin<l+1||wMax>r-1)bad.Add(who+" word leaves the highlight ("+wMin+".."+wMax+" in "+l+".."+r+")");
-        if(wMaxY>bot-1||iMinY<top+1)bad.Add(who+" content touches the highlight's edge");
+       using(var bmp=new Bitmap(w,h)){
+        bmp.SetResolution(96*k,96*k);
+        using var g=Graphics.FromImage(bmp);g.Clear(Theme.Bg);
+        NavBar.Paint(g,w,h,k,sel);shots++;
+        var sector=NavBar.Pill(sel,w,h,k,NavBar.Count);
+        string who=(en?"en ":"ru ")+(int)(k*96)+"dpi tab"+sel;
+        if(sector.Top!=0||sector.Bottom!=h)bad.Add(who+" detached selection");
+        foreach(int x in new[]{sector.Left+2,sector.Right-3}){
+         if(!IsPill(bmp,x,h-2))bad.Add(who+" bottom corner is inset or rounded");
+         if(!IsPill(bmp,x,(int)(4*k)))bad.Add(who+" top corner is inset or rounded");
+        }
+        var accent=bmp.GetPixel(sector.Left+sector.Width/2,0);
+        if(accent.ToArgb()==Theme.AccentHover.ToArgb())bad.Add(who+" hard accent line on top of the selection");
+        for(int i=0;i<NavBar.Count;i++)if(i!=sel){
+         var other=NavBar.Pill(i,w,h,k,NavBar.Count);
+         if(IsPill(bmp,other.Left+other.Width/2,h-2))bad.Add(who+" selection leaks into another sector");
+        }
+        for(int part=0;part<2;part++){
+         int minX=w,maxX=-1;
+         int top=part==0?(int)(7*k):h/2,bottom=part==0?h/2:h-(int)(6*k);
+         for(int y=top;y<bottom;y++)for(int x=sector.Left+1;x<sector.Right-1;x++){
+          var px=bmp.GetPixel(x,y);
+          if(px.R>120&&px.G>120&&px.B>120){minX=Math.Min(minX,x);maxX=Math.Max(maxX,x);}
+         }
+         if(maxX<0)bad.Add(who+" missing "+(part==0?"icon":"label"));
+         else if(Math.Abs((minX+maxX+1)/2.0-(sector.Left+sector.Right)/2.0)>2+ k)bad.Add(who+" content off centre");
+        }
        }
       }
-      if(widths.Count>0&&widths.Max()-widths.Min()>1)bad.Add((en?"en ":"ru ")+(int)(k*96)+"% widths "+string.Join(",",widths));
-      if(heights.Count>0&&heights.Max()-heights.Min()>0)bad.Add((en?"en ":"ru ")+(int)(k*96)+"% heights "+string.Join(",",heights));
+      var first=NavBar.Pill(0,w,h,k,NavBar.Count);var last=NavBar.Pill(NavBar.Count-1,w,h,k,NavBar.Count);
+      if(first.Left!=0||last.Right!=w)bad.Add("navigation does not meet outer edges");
+      for(int i=1;i<NavBar.Count;i++)if(NavBar.Pill(i-1,w,h,k,NavBar.Count).Right!=NavBar.Pill(i,w,h,k,NavBar.Count).Left)bad.Add("gap between sectors");
      }
     }
-    Check(bad.Count==0,"tab bar: the highlight is one size for every tab, centred on its cell (same gap left and right, above and below), rounded with equal corners, and holds the icon and the word centred — 5 scales × 5 tabs × 2 languages ("+shots+" renders)"+(bad.Count==0?"":" — "+string.Join("; ",bad.Take(8))));
-    // moving between two tabs the highlight slides without changing size
-    int sw0=NavBar.Pill(0,352,58,1f,5).Width,sw1=NavBar.Pill(2.5f,352,58,1f,5).Width,sw2=NavBar.Pill(4,352,58,1f,5).Width;
-    Check(sw0==sw1&&sw1==sw2,"tab bar: sliding between tabs keeps the size of the highlight");
-   } finally { L.En=en0; }
+    Check(bad.Count==0,"tab bar: cast full-height selection, square connected corners, no accent line, centred icons and labels, no gaps or leakage — "+shots+" renders"+(bad.Count==0?"":" — "+string.Join("; ",bad.Take(8))));
+    using(var nav=new NavBar()){
+     int changes=0;nav.SelectedChanged+=(_,__)=>changes++;
+     nav.Selected=-1;nav.Selected=NavBar.Count;Check(nav.Selected==0&&changes==0,"tab bar: invalid selection preserves the current page");
+     nav.Selected=4;nav.Selected=4;Check(nav.Selected==4&&changes==1&&nav.AccessibleName==L.T(NavBar.Labels[4]),"tab bar: one change event and accessible name for the selected page");
+    }
+    using(var form=new MainForm(true)){
+     form.Show();Application.DoEvents();var nav=form.NavControl;
+     Check(nav.Bottom==form.ClientSize.Height&&nav.Left==0&&nav.Width==form.ClientSize.Width,"tab bar: initial panel meets the client bottom and both sides");
+     var fixedSize=form.NativeClientSizeForTest;form.ClientSize=new Size(form.ClientSize.Width+160,form.ClientSize.Height+300);Application.DoEvents();
+     Check(form.NativeClientSizeForTest==fixedSize&&form.FixedWindowForTest&&nav.Bottom==fixedSize.Height,"compact: attempted resizing preserves the native fixed canvas and bottom navigation");
+     form.Close();
+    }
+   }finally{L.En=en0;}
   }
 
-  // ---- the controls of this pass: levels while busy, the field with its ping ----
+  // the controls of this pass: levels while busy, the field with its ping
   static void RunV4ControlTests() {
-   using(var seg=new Segmented{Bounds=new Rectangle(0,0,320,36),Items=new[]{"A","B","C"},Cumulative=true}) {
-    seg.SelectedIndex=1;int changes=0;seg.SelectedIndexChanged+=(_,__)=>changes++;
+   using(var seg=new ServicePicker{Bounds=new Rectangle(0,0,320,36),Items=new[]{"A","B","C"}}) {
+    seg.SetOn(true,false,false);int changes=0;seg.SelectionChanged+=(_,__)=>changes++;
     using(var calm=new Bitmap(320,36))using(var busy=new Bitmap(320,36)) {
      seg.DrawToBitmap(calm,new Rectangle(0,0,320,36));
      seg.Busy=true;seg.DrawToBitmap(busy,new Rectangle(0,0,320,36));
      int diff=0;for(int y=4;y<32;y++)for(int x=8;x<200;x++){var p=calm.GetPixel(x,y);var q=busy.GetPixel(x,y);if(Math.Abs(p.R-q.R)+Math.Abs(p.G-q.G)+Math.Abs(p.B-q.B)>12)diff++;}
      Check(diff>200,"levels: while a choice is being applied the highlight looks different (busy tone), so the control does not look idle or greyed out ("+diff+" px)");
     }
-    seg.ClickForTest(2);Check(changes==0&&seg.SelectedIndex==1,"levels: while busy a click changes nothing");
-    seg.Busy=false;seg.ClickForTest(2);Check(changes==1&&seg.SelectedIndex==2,"levels: once the work is done a click works again");
+    seg.ClickForTest(1);Check(changes==0&&!seg.IsOn(1),"levels: while busy a click changes nothing");
+    seg.Busy=false;seg.ClickForTest(1);Check(changes==1&&seg.IsOn(1),"levels: once the work is done a click works again");
    }
    // the profile field: the name on the left, the ping (dot and words) before the chevron; a long name gives way, the ping never does
    float sysK;using(var probe=new Panel())sysK=probe.DeviceDpi/96f;   // a control paints at the scale of the screen it is on
@@ -110,7 +122,7 @@ namespace AgDns {
    }
   }
 
-  // ---- 3. the dense block under the logo at the scale of this screen (the other scales: a fresh process per scale, --ui-smoke --dpi N, see verify.ps1) ----
+  // 3. the dense block under the logo at the scale of this screen (the other scales: a fresh process per scale, --ui-smoke --dpi N, see verify.ps1)
   static void RunV4ScaleTests() {
    bool en0=L.En;var bad=new List<string>();
    try {
@@ -126,14 +138,32 @@ namespace AgDns {
    Check(bad.Count==0,"main block: at this screen's scale, in both languages, the button, the profile field and the levels keep equal gaps, equal fields and equal margins, nothing overlaps, everything stays on the page"+(bad.Count==0?"":" — "+string.Join("; ",bad.Take(6))));
   }
 
-  // ---- 1. autostart in the window ----
+  // profile choice: a row of the measurement picks the profile; a connected bridge follows it
+  static void RunV4ProfileChoiceTests() {
+   using var form=new MainForm(true);
+   form.Show();Application.DoEvents();
+   int applied=0;form.ApplyProfileHook=()=>{applied++;return Task.CompletedTask;};
+   var ids=ProfileCatalog.BuiltIn.Profiles.Select(p=>p.Id).ToArray();
+   form.SmokeState("idle");string first=form.CurrentProfileId,other=ids.First(x=>x!=first);
+   form.ClickBenchRowForTest(other);
+   Check(form.CurrentProfileId==other&&form.BenchRowSelected(other)&&applied==0,"profile choice: a click on a measurement row selects that profile; an idle bridge is not touched");
+   form.SmokeState("active");
+   Check(form.ProfileSelectEnabled,"profile choice: the profile list stays open while the bridge is connected");
+   string third=ids.First(x=>x!=other);
+   form.ClickBenchRowForTest(third);
+   Check(form.CurrentProfileId==third&&applied==1,"profile choice: on a connected bridge the chosen profile is applied at once");
+   form.ClickBenchRowForTest(third);
+   Check(applied==1,"profile choice: the profile already in use is not applied again");
+  }
+
+  // 1. autostart in the window
   static void RunV4AutostartUiTests() {
    const string isoKey=@"Software\AgDnsTest\RunUi";string realKey=AutostartHelper.KeyName;
    Microsoft.Win32.Registry.CurrentUser.CreateSubKey(isoKey).Dispose();AutostartHelper.KeyName=isoKey;
    string dir=Path.Combine(Path.GetTempPath(),"agdns-asui-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(dir);
    bool en0=L.En;
    try {
-    string self=Environment.ProcessPath;string other=Path.Combine(dir,"AntigravityDnsUnlocker.exe");File.Copy(self,other,true);
+    string self=Environment.ProcessPath;string other=Path.Combine(dir,"AntigravityGeminiDns.exe");File.Copy(self,other,true);
     string foreign=Path.Combine(dir,"foreign","PING.EXE");Directory.CreateDirectory(Path.GetDirectoryName(foreign));File.Copy(Environment.SystemDirectory+@"\PING.EXE",foreign,true);
     AutostartHelper.SetEnabled(true,other);
     using(var form=new MainForm(true)) {
@@ -142,9 +172,14 @@ namespace AgDns {
      var rows0=form.SettingsRows;
      form.ToggleAutostartForTest(true);   // a question here would block the test: there is none
      Check(form.AutostartOn&&AutostartHelper.IsEnabled(self)&&form.AutostartSubtitle=="Программа следит за состоянием моста"&&form.PreviousCopyVisible&&form.PreviousCopyText=="Прежняя копия: "+other,"autostart window: turning it on moves the entry to this exe without a word and shows «Прежняя копия: <путь>» under the switch");
-     var rows=form.SettingsRows;float s=form.LayoutScale;int pageH=form.PageHeightOf(2);
-     bool apart=rows[1].Bottom<=rows[2].Top+1&&rows[2].Bottom<=rows[3].Top+1&&rows[3].Bottom<=rows[4].Top+1&&rows[4].Bottom<=rows[5].Top+1&&rows[5].Bottom<=rows[0].Bottom&&rows[0].Bottom<=rows[6].Top&&rows[6].Bottom<=pageH&&rows[3].Top>rows0[3].Top&&rows[2].Height>=(int)(30*s);
-     Check(apart,"autostart window: the row «Прежняя копия» takes its own room between the switch and the next row; the cards below move down and stay on the page");
+     float s=form.LayoutScale;int pageH=form.SettingsContentHeight;
+     // rows[1..5] are inside the first card (card coordinates); the cards themselves are page coordinates that include the scroll offset.
+     // Each comparison stays in one coordinate space, so the check holds whether or not the page happens to be scrolled (focus can scroll it).
+     bool Apart(Rectangle[] r,int scroll)=>r[1].Bottom<=r[2].Top+1&&r[2].Bottom<=r[3].Top+1&&r[3].Bottom<=r[4].Top+1&&r[4].Bottom<=r[5].Top+1&&r[5].Bottom<=r[0].Height&&r[0].Bottom<=r[6].Top&&r[6].Bottom-scroll<=pageH&&r[3].Top>rows0[3].Top&&r[2].Height>=(int)(30*s);
+     bool ApartAt(bool footer){int scroll=form.ScrollSettingsForTest(footer);return Apart(form.SettingsRows,scroll);}   // scroll first, then read the rows at that offset
+     bool apart=ApartAt(false)&&ApartAt(true)&&form.SettingsFooterReachableForTest();
+     form.ScrollSettingsForTest(false);
+     Check(apart,"autostart window: the row «Прежняя копия» takes its own room between the switch and the next row; the cards below move down and stay on the page"+(apart?"":" (rows "+string.Join(";",form.SettingsRows.Select(r=>r.Top+"-"+r.Bottom))+", page "+pageH+")"));
      // delete: asked first; refused while running; never a foreign file; only then gone
      string asked=null,notice=null;form.DeleteConfirm=p=>{asked=p;return false;};form.Notice=n=>notice=n;form.RunningProbe=p=>false;
      form.ClickDeletePreviousCopyForTest();
@@ -163,13 +198,20 @@ namespace AgDns {
      Check(!form.AutostartOn&&AutostartHelper.CurrentTarget()==null,"autostart window: turning it off removes the entry");
      form.ToggleAutostartForTest(true);
      Check(form.AutostartOn&&AutostartHelper.IsEnabled(self)&&!form.PreviousCopyVisible,"autostart window: turning it on with no entry names this exe and offers nothing to delete");
+     // «Файл автозапуска»: the chosen exe goes into the entry, the switch stays on, and a later off/on keeps the chosen file
+     form.AutostartFilePicker=()=>foreign;form.ChooseAutostartFileForTest();
+     Check(form.AutostartOn&&AutostartHelper.SamePath(AutostartHelper.CurrentTarget(),foreign)&&form.AutostartSubtitle=="Программа следит за состоянием моста","autostart file: a chosen exe is what autostart runs, the switch shows it on");
+     form.ToggleAutostartForTest(false);form.ToggleAutostartForTest(true);
+     Check(AutostartHelper.SamePath(AutostartHelper.CurrentTarget(),foreign),"autostart file: switching off and on keeps the chosen file");
+     form.AutostartFilePicker=()=>self;form.ChooseAutostartFileForTest();
+     Check(form.AutostartOn&&AutostartHelper.IsEnabled(self),"autostart file: choosing this copy again points the entry back here");
     }
     AutostartHelper.SetEnabled(false);
     // the row in English, and a long path still leaves the delete button its room
     L.En=true;
     using(var form=new MainForm(true)) {
      form.Show();Application.DoEvents();form.SelectTab(2);Application.DoEvents();
-     string deep=Path.Combine(dir,"a very long folder name that goes on and on","and another one","AntigravityDnsUnlocker.exe");Directory.CreateDirectory(Path.GetDirectoryName(deep));File.Copy(self,deep,true);
+     string deep=Path.Combine(dir,"a very long folder name that goes on and on","and another one","AntigravityGeminiDns.exe");Directory.CreateDirectory(Path.GetDirectoryName(deep));File.Copy(self,deep,true);
      form.SetPreviousCopyForTest(deep);
      Check(form.PreviousCopyText=="Previous copy: "+deep&&form.AllVisibleTexts().Contains("Previous copy: "+deep)&&form.AllVisibleTexts().Contains("Delete"),"autostart window: the row is in English too (a switch rewrites it)");
      var rr=form.SettingsRows;Check(rr[2].Right<=rr[0].Right,"autostart window: the row stays inside its card with a long path");
@@ -177,7 +219,7 @@ namespace AgDns {
    } finally { L.En=en0;AutostartHelper.KeyName=realKey;try{Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\AgDnsTest",false);}catch{}try{Directory.Delete(dir,true);}catch{} }
   }
 
-  // ---- 2. the levels are applied at once ----
+  // 2. the levels are applied at once
   static void RunV4ScopeTests() {
    var cat=ProfileCatalog.BuiltIn;bool g0=Program.Gemini,g1=Program.Google;
    using(var form=new MainForm(true)) {
@@ -187,46 +229,47 @@ namespace AgDns {
      string core=J(cat.Targets),gem=J(cat.TargetsFor(true)),all=J(cat.TargetsForGoogle());string journal=core;form.JournalReader=()=>journal;
      int hooked=0;form.MutateHook=(a,r)=>{hooked++;return Task.CompletedTask;};
      // no bridge: remembered only, no operation, no busy state
-     form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.Gemini);
-     Check(hooked==0&&Program.Gemini&&!Program.Google&&form.ScopeIndex==1&&!form.ScopeBusy&&!form.BrowserPanelVisible,"levels: with no bridge a click is only remembered for the next connect (no operation, no question)");
+     form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);
+     Check(hooked==0&&Program.Gemini&&!Program.Google&&form.ScopeSelected==MainForm.BridgeScope.CoreGemini&&!form.ScopeBusy&&!form.BrowserPanelVisible,"levels: with no bridge a click is only remembered for the next connect (no operation, no question)");
      // a working bridge: applied at once, busy meanwhile, a second click is ignored, the new level stands
      form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);journal=core;hooked=0;
      bool busyDuring=false,enabledDuring=false;int reentry=0;bool panelDuring=false;
-     form.MutateHook=async(a,r)=>{hooked++;busyDuring=form.ScopeBusy;enabledDuring=form.ScopeControl.Enabled;int before=hooked;form.ClickScopeForTest(MainForm.BridgeScope.Google);reentry+=hooked-before;panelDuring=form.BrowserPanelVisible;await Task.Delay(80);journal=gem;};
-     form.ClickScopeForTest(MainForm.BridgeScope.Gemini);
+     form.MutateHook=async(a,r)=>{hooked++;busyDuring=form.ScopeBusy;enabledDuring=form.ScopeControl.Enabled;int before=hooked;form.ClickScopeForTest(MainForm.BridgeScope.All);reentry+=hooked-before;panelDuring=form.BrowserPanelVisible;await Task.Delay(80);journal=gem;};
+     form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);
      bool done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
      Check(done&&hooked==1&&busyDuring&&enabledDuring&&reentry==0&&!panelDuring,"levels: with a working bridge a click is applied at once (one operation), the levels show they are busy and ignore a second click meanwhile");
-     Check(form.ScopeIndex==1&&Program.Gemini&&!Program.Google&&!form.ScopeBusy&&form.ScopeControl.Enabled,"levels: when the operation ends the new level stands and the control is free again");
+     Check(form.ScopeSelected==MainForm.BridgeScope.CoreGemini&&Program.Gemini&&!Program.Google&&!form.ScopeBusy&&form.ScopeControl.Enabled,"levels: when the operation ends the new level stands and the control is free again");
      // a failure: the usual error, the selector goes back, the old bridge stays
-     hooked=0;journal=gem;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Gemini);
+     hooked=0;journal=gem;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.CoreGemini);
      form.MutateHook=async(a,r)=>{hooked++;await Task.Delay(40);form.ShowFailureForTest("UAC_CANCELLED");};
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);
+     form.ClickScopeForTest(MainForm.BridgeScope.All);
+     Pump(form.BrowserWork);
      if(form.BrowserPanelVisible){Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();}
      done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
-     Check(done&&form.ScopeIndex==1&&Program.Gemini&&!Program.Google&&form.StatusText==CodeTable.Lookup("UAC_CANCELLED").Title&&form.BridgeActive,"levels: a refusal puts the selector back, says the usual thing in the status and leaves the bridge as it was");
+     Check(done&&form.ScopeSelected==MainForm.BridgeScope.CoreGemini&&Program.Gemini&&!Program.Google&&form.StatusText=="Мост подключён"&&form.SubText.Contains(CodeTable.Lookup("UAC_CANCELLED").Text)&&form.BridgeActive,"levels: refusal remains in the detail, scope and applied bridge stay connected");
      // an exception inside the operation: nothing is left busy, the selector is back
      hooked=0;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);journal=core;
      form.MutateHook=(a,r)=>{hooked++;throw new InvalidOperationException("boom");};
-     form.ClickScopeForTest(MainForm.BridgeScope.Gemini);done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
-     Check(done&&form.ScopeIndex==0&&!Program.Gemini&&!form.ScopeBusy,"levels: an exception in the operation leaves nothing busy and puts the selector back");
+     form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
+     Check(done&&form.ScopeSelected==MainForm.BridgeScope.Core&&!Program.Gemini&&!form.ScopeBusy,"levels: an exception in the operation leaves nothing busy and puts the selector back");
      // no journal to read and no bridge afterwards: back to the old level
      hooked=0;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);journal="";
      form.MutateHook=(a,r)=>{hooked++;form.SmokeState("idle");return Task.CompletedTask;};
-     form.ClickScopeForTest(MainForm.BridgeScope.Gemini);done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
-     Check(done&&form.ScopeIndex==0&&!Program.Gemini,"levels: if the bridge is gone after a failed apply and nothing can be read, the selector returns to the old level");
+     form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
+     Check(done&&form.ScopeSelected==MainForm.BridgeScope.Core&&!Program.Gemini,"levels: if the bridge is gone after a failed apply and nothing can be read, the selector returns to the old level");
      // «+ Браузер» with a working bridge: the browser panel, then the work at once; the panel's «Продолжить» is the only thing in between
      hooked=0;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);journal=core;bool busyGoogle=false;
      form.MutateHook=async(a,r)=>{hooked++;busyGoogle=form.ScopeBusy;await Task.Delay(40);journal=all;};
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);
-     Check(form.BrowserPanelVisible&&hooked==0,"levels: «+ Браузер» shows the browser panel first and applies nothing yet");
-     form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
-     Check(done&&busyGoogle&&form.ScopeIndex==2&&Program.Google,"levels: after «Продолжить» «+ Браузер» is applied at once and the selector shows it was busy");
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);
+     if(form.BrowserPanelVisible){Check(hooked==0,"levels: unconfirmed browser applies nothing before the decision");form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();}
+     done=PumpUntil(()=>hooked>=1&&!form.ScopeBusy,4000);
+     Check(done&&busyGoogle&&form.ScopeSelected==MainForm.BridgeScope.All&&Program.Google,"levels: after «Продолжить» «+ Браузер» is applied at once and the selector shows it was busy");
      form.MutateHook=null;form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);
     } finally { Program.Gemini=g0;Program.Google=g1;form.Close(); }
    }
   }
 
-  // ---- 5. language without a restart ----
+  // 5. language without a restart
   static void RunV4LanguageTests() {
    var shared=L.SharedEnglish().ToList();
    Check(shared.Count==0,"language: no two Russian phrases share one English phrase, so a switch back to Russian is exact"+(shared.Count==0?"":" — "+string.Join(" | ",shared.Take(6))));
@@ -253,16 +296,16 @@ namespace AgDns {
      // the saved choice, the tooltips, the profile list, nothing restarted
      form.SmokeState("idle");form.LanguageControl.ClickForTest(1);
      Check(L.En&&form.SettingsLanguage=="en"&&form.LanguageControl.SelectedIndex==1,"language: the choice is remembered in the settings and the window stays the same window");
-     Check(form.ScopeSegmented.Tips[0]=="Only the Antigravity domains."&&form.ScopeSegmented.Items[2]=="+ Browser"&&form.ProfileLabels.All(l=>!l.Contains("эксп.")),"language: the tooltips, the levels and the profile list follow at once");
+     Check(form.ScopePicker.Tips[0]=="The Antigravity domains."&&form.ScopePicker.Items[2]=="Browser"&&form.ProfileLabels.All(l=>!l.Contains("эксп.")),"language: the tooltips, the levels and the profile list follow at once");
      form.LanguageControl.ClickForTest(0);
-     Check(!L.En&&form.SettingsLanguage=="ru"&&form.ScopeSegmented.Tips[0]=="Только домены Antigravity.","language: and back");
+     Check(!L.En&&form.SettingsLanguage=="ru"&&form.ScopePicker.Tips[0]=="Домены Antigravity.","language: and back");
      // a message from the table (a failure) is written again in the other language, title and text and action
      form.ShowFailureForTest("UAC_CANCELLED");var ruTitle=form.StatusText;var ruSub=form.SubText;
      form.LanguageControl.ClickForTest(1);
-     Check(form.StatusText=="Operation cancelled"&&form.SubText.Contains("declined")&&form.SubText.Contains("Try again")&&ruTitle=="Операция отменена"&&ruSub.Contains("отклонён"),"language: a failure shown in the status is rewritten (title, text and action), not left in the old language");
-     form.LanguageControl.ClickForTest(0);Check(form.StatusText=="Операция отменена"&&form.SubText==ruSub,"language: and rewritten back to the same Russian");
+     Check(form.StatusText=="Bridge disconnected"&&form.SubText.Contains("declined")&&form.SubText.Contains("Try again")&&ruTitle=="Мост отключён"&&ruSub.Contains("отклонён"),"language: the stable bridge title and failure detail both follow the selected language");
+     form.LanguageControl.ClickForTest(0);Check(form.StatusText=="Мост отключён"&&form.SubText==ruSub,"language: and rewritten back to the same Russian");
      // the open screens: the details panel and the browser panel
-     form.SmokeDetails("xbox-dns.ru",false);form.LanguageControl.ClickForTest(1);
+     form.SmokeDetails("dns.zapret.moe",false);form.LanguageControl.ClickForTest(1);
      Check(form.DetailsVisible&&form.DetailsText.Contains("Profile: ")&&!Cyr.IsMatch(form.DetailsText.Split('\n')[0]),"language: an open «Подробнее» panel is rewritten");
      form.LanguageControl.ClickForTest(0);form.SelectTab(0);
      form.SmokeState("idle");form.SmokeBrowserPanel("chrome",true);var ruHead=form.BrowserHeadline;form.LanguageControl.ClickForTest(1);
@@ -276,9 +319,9 @@ namespace AgDns {
      // the tray
      form.SmokeState("idle");form.InitTrayForTest();var trayRu=form.TrayTexts;
      form.LanguageControl.ClickForTest(1);var trayEn=form.TrayTexts;form.LanguageControl.ClickForTest(0);var trayBack=form.TrayTexts;
-     Check(trayEn.Length==6&&trayEn[0]=="Open window"&&trayEn[2]=="Connect bridge"&&trayEn[4]=="Exit"&&trayEn[5]=="Antigravity DNS — bridge disconnected"&&trayEn.All(t=>!Cyr.IsMatch(t))&&trayRu.SequenceEqual(trayBack)&&trayRu[0]=="Открыть окно","language: the tray menu and its tooltip follow at once and come back exactly");
+     Check(trayEn.Length==6&&trayEn[0]=="Open window"&&trayEn[2]=="Connect bridge"&&trayEn[4]=="Exit"&&trayEn[5]=="Antigravity-Gemini DNS — bridge disconnected"&&trayEn.All(t=>!Cyr.IsMatch(t))&&trayRu.SequenceEqual(trayBack)&&trayRu[0]=="Открыть окно","language: the tray menu and its tooltip follow at once and come back exactly");
      form.SmokeState("active");var trayOnRu=form.TrayTexts;form.LanguageControl.ClickForTest(1);
-     Check(form.TrayTexts[1]=="Bridge: connected"&&form.TrayTexts[2]=="Disconnect"&&form.TrayTexts[5].StartsWith("Antigravity DNS — bridge connected"),"language: the tray follows the state of the bridge too (connected)");
+     Check(form.TrayTexts[1]=="Bridge: connected"&&form.TrayTexts[2]=="Disconnect"&&form.TrayTexts[5].StartsWith("Antigravity-Gemini DNS — bridge connected"),"language: the tray follows the state of the bridge too (connected)");
      form.LanguageControl.ClickForTest(0);
      // the same, from a progress state that holds a function of the language (checking the provider)
      form.SmokeState("busy");string busyRu=form.StatusText;form.SetBusyForTest(false);
@@ -287,7 +330,7 @@ namespace AgDns {
    } finally { L.En=en0; }
   }
 
-  // ---- 4. the browsers: Chrome and Edge first, the rest as found, «Другой» last ----
+  // 4. the browsers: Chrome and Edge first, the rest as found, «Другой» last
   static void RunV4BrowserOrderTests() {
    var env=new MemoryBrowserEnv();
    foreach(var pair in new[]{("waterfox.exe",@"C:\Waterfox\waterfox.exe"),("oddbrowser.exe",@"C:\Odd\oddbrowser.exe"),("firefox.exe",FirefoxExe),("brave.exe",@"C:\b\brave.exe"),("msedge.exe",EdgeExe),("chrome.exe",ChromeExe)})
@@ -313,7 +356,7 @@ namespace AgDns {
    }
   }
 
-  // ---- review of 2026-10-14 (evening): a flash on a button and a language switch; the autostart path comparison; a wrong --dpi ----
+  // review of 2026-10-14 (evening): a flash on a button and a language switch; the autostart path comparison; a wrong --dpi
   static void RunV4ReviewTests() {
    bool en0=L.En;
    try {

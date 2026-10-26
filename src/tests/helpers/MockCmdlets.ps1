@@ -49,6 +49,19 @@ function Reset-MockEnvironment {
 }
 
 # Mocked Cmdlet Implementations (Interceptors)
+# Engine cache invalidation must never reach the real ipconfig.exe in offline tests.
+$script:MockCacheFlushCount = 0
+function Clear-DnsResolverCache { $script:MockCacheFlushCount++; return $true }
+# Legacy Set-Autostart queries schtasks.exe even with an isolated RunPath.
+# Intercept it too: no live task can be discovered or deleted by this fixture.
+function Invoke-ScheduledTaskTool([string[]]$Arguments) {
+    if (@($Arguments | Where-Object { $_ -eq '/Query' }).Count -ne 1) { throw 'OFFLINE_SCHEDULED_TASK_MUTATION_BLOCKED' }
+    return 1
+}
+function Get-LegacyAutostartTask { return $null }
+function Register-ScheduledTask { throw 'OFFLINE_SCHEDULED_TASK_MUTATION_BLOCKED' }
+function Unregister-ScheduledTask { throw 'OFFLINE_SCHEDULED_TASK_MUTATION_BLOCKED' }
+
 function Get-Rules {
     return @($script:MockRules)
 }

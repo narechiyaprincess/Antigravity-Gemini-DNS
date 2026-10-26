@@ -4,7 +4,7 @@ using System.Linq;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  public enum RevocationVerdict{Good,Revoked,Unknown}
 
  // Revocation of the certificates of a provider and of Google, the soft way: a certificate that its issuer has EXPLICITLY revoked is refused; when the answer cannot be had
@@ -21,8 +21,8 @@ namespace AgDns {
   // Only an explicit revocation counts; "could not find out" (no server reachable, offline) is a separate answer that refuses nothing; other chain problems are not this check's business.
   public static RevocationVerdict Decide(System.Collections.Generic.IEnumerable<X509ChainStatusFlags> statuses) {
    var flags=statuses.ToList();
-   if(flags.Contains(X509ChainStatusFlags.Revoked))return RevocationVerdict.Revoked;
-   if(flags.Contains(X509ChainStatusFlags.RevocationStatusUnknown)||flags.Contains(X509ChainStatusFlags.OfflineRevocation))return RevocationVerdict.Unknown;
+   if(flags.Any(f=>(f&X509ChainStatusFlags.Revoked)!=0))return RevocationVerdict.Revoked;
+   if(flags.Any(f=>(f&(X509ChainStatusFlags.RevocationStatusUnknown|X509ChainStatusFlags.OfflineRevocation))!=0))return RevocationVerdict.Unknown;
    return RevocationVerdict.Good;
   }
 
@@ -52,7 +52,7 @@ namespace AgDns {
   }
   public static bool IsRevoked(System.Security.Cryptography.X509Certificates.X509Certificate cert)=>Check(cert)==RevocationVerdict.Revoked;
 
-  // For HTTP handlers and SslStream: the policy errors must be none (exactly as before) and the certificate must not be explicitly revoked.
+  // For HTTP handlers and SslStream: the policy errors must be none (as before) and the certificate must not be explicitly revoked.
   public static bool Callback(object sender,System.Security.Cryptography.X509Certificates.X509Certificate cert,X509Chain chain,SslPolicyErrors errors)=>errors==SslPolicyErrors.None&&!IsRevoked(cert);
  }
 }

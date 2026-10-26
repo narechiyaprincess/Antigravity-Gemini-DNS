@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference='Stop'
+$ErrorActionPreference='Stop'
 # no cmdlet before the engine has restricted the module path (see Engine.ps1)
 . ([IO.Path]::Combine($PSScriptRoot,'Engine.ps1')) -LibraryOnly
 $steps=@();$opLock=$null;$before=$null;$after=$null;$enabled=$false;$failure=$null;$ownedRules=@()
@@ -9,8 +9,8 @@ function Snapshot {
   Adapters=@(Get-DnsClientServerAddress | Select-Object InterfaceIndex,AddressFamily,ServerAddresses | Sort-Object InterfaceIndex,AddressFamily)
   Dhcp=@(Get-CimInstance Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True' | Select-Object Index,DHCPEnabled,DNSServerSearchOrder,DNSDomainSuffixSearchOrder | Sort-Object Index)
   Suffix=(Get-DnsClientGlobalSetting | Select-Object SuffixSearchList,UseDevolution,DevolutionLevel)
-  HostsSha256=(Get-FileHash -LiteralPath (Join-Path $env:WINDIR 'System32\drivers\etc\hosts')).Hash
-  WinHttpProxy=((& netsh winhttp show proxy) -join "`n")
+  HostsSha256=(Get-FileHash -LiteralPath (Join-Path ([Environment]::SystemDirectory) 'drivers\etc\hosts')).Hash
+  WinHttpProxy=((& (Join-Path ([Environment]::SystemDirectory) 'netsh.exe') winhttp show proxy) -join "`n")
  } | ConvertTo-Json -Depth 7 -Compress
 }
 try {

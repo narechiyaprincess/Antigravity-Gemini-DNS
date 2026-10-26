@@ -5,18 +5,23 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <AssemblyName>AntigravityDnsUnlocker</AssemblyName>
-    <Version>1.0.0</Version>
+    <AssemblyName>AntigravityGeminiDns</AssemblyName>
+    <Version>1.1.0</Version>
+    <Product>Antigravity-Gemini DNS</Product>
+    <AssemblyTitle>Antigravity-Gemini DNS</AssemblyTitle>
+    <Description>DNS bridge for Antigravity, Gemini and Google services on Windows</Description>
+    <Copyright>MIT License</Copyright>
+    <RootNamespace>AntigravityGeminiDns</RootNamespace>
+    <!-- Without this, a build from a git checkout gets "1.1.0+<commit>" as InformationalVersion: the same sources then give different bytes with and without .git. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Preserve the complete WinForms/COM runtime; compress the portable file without trimming. -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <!-- WinForms trimming requires reflection-based JSON, COM interop and the app assembly to be preserved.
-         Validate the published binary with the UI surface checks. ReadyToRun reduces startup JIT work. -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>full</TrimMode>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <DebugType>none</DebugType>
@@ -31,8 +36,7 @@
     <EmbeddedResource Include="Integration.ps1" LogicalName="Integration.ps1" />
     <EmbeddedResource Include="EmergencyRestore.ps1" LogicalName="EmergencyRestore.ps1" />
     <EmbeddedResource Include="profiles.json" LogicalName="profiles.json" />
-  </ItemGroup>
-  <ItemGroup>
-    <TrimmerRootAssembly Include="AntigravityDnsUnlocker" />
+    <EmbeddedResource Include="Assets/Antigravity.png" LogicalName="Service.Antigravity.png" />
+    <EmbeddedResource Include="Assets/Gemini.png" LogicalName="Service.Gemini.png" />
   </ItemGroup>
 </Project>

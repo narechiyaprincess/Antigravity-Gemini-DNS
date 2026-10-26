@@ -4,39 +4,31 @@
   "targets": ["daily-cloudcode-pa.googleapis.com", "generativelanguage.googleapis.com"],
   "geminiTargets": ["gemini.google.com", "geminiweb-pa.clients6.google.com"],
   "googleTargets": [".google.com", ".googleapis.com", ".gstatic.com", ".googleusercontent.com", ".google"],
-  "version": "2026.10.13.1",
-  "updated": "2026-10-13",
+  "version": "2026.10.26.1",
+  "updated": "2026-10-26",
   "policy": "A server IP is pinned only after: (1) the host name resolved identically by the system resolver and public DoH cross-checks, (2) TLS on the provider NAME validated with the default certificate chain, (3) an RFC 8484 DoH query was answered. Enabling the bridge still runs the full preflight (DoH + TLS to the answer IP for both Google domains) and refuses on failure.",
   "profiles": [
     {
       "id": "dns.malw.link", "slot": "P1", "aliases": [],
       "template": "https://dns.malw.link/dns-query",
       "servers": ["179.254.166.171", "164.5.224.81"],
-      "origin": "release 1.0.0"
-    },
-    {
-      "id": "xbox-dns.ru", "slot": "P2", "aliases": [],
-      "template": "https://xbox-dns.ru/dns-query",
-      "servers": ["185.185.185.185", "185.185.185.186"],
-      "origin": "release 1.0.0",
-      "experimental": true,
-      "note": "Проверка 2026-10-11: оба закреплённых адреса сбрасывают TCP-соединения из тестовой сети. Имя хоста теперь указывает на другие адреса: они проходят TLS по имени, но DoH для обоих доменов Google на них не прошёл, поэтому замены нет. Адреса оставлены как были."
+      "origin": "release 1.0.0; re-checked by --bootstrap 2026-10-26 (both pins: TLS by name, DoH for both Google domains, TLS to the answer address)"
     },
     {
       "id": "dns.comss.one", "slot": "P3", "aliases": [],
       "template": "https://dns.comss.one/dns-query",
-      "servers": ["83.220.169.155", "195.133.25.16", "212.109.195.93"],
-      "origin": "release 1.0.0; pins replaced by bootstrap 2026-10-12",
+      "servers": ["195.133.25.16", "212.109.195.93", "94.250.253.55", "185.146.157.78"],
+      "origin": "release 1.0.0; pins replaced by bootstrap 2026-10-12 and 2026-10-26",
       "bootstrap": {
-        "date": "2026-10-12",
-        "resolved": ["195.133.25.16", "83.220.169.155", "212.109.195.93"],
-        "crossCheck": "system resolver, 1.1.1.1, 8.8.8.8 and 9.9.9.9 returned the same three addresses",
-        "pinned": ["83.220.169.155", "195.133.25.16", "212.109.195.93"],
+        "date": "2026-10-26",
+        "resolved": ["195.133.25.16", "94.250.253.55", "185.146.157.78", "212.109.195.93"],
+        "crossCheck": "system resolver and the public DoH cross-checks of --bootstrap returned the same four addresses",
+        "pinned": ["195.133.25.16", "212.109.195.93", "94.250.253.55", "185.146.157.78"],
         "excluded": [],
-        "tls": "CN=*.comss.one, h2, Let's Encrypt YR1, valid until 2026-12-17",
-        "replaced": ["92.223.109.31", "92.38.150.150"]
+        "tls": "CN=*.comss.one, h2, Let's Encrypt, valid until 2026-12-17 .. 2027-01-16",
+        "replaced": ["83.220.169.155"]
       },
-      "note": "Проверка 2026-10-12 через --bootstrap: все три адреса прошли TLS по имени и DoH для обоих доменов Google. Они заменили прежние закреплённые адреса, которые 2026-10-11 не принимали соединения. Если ни один закреплённый адрес не проходит проверку, адреса ищутся заново при подключении."
+      "note": "Проверка 2026-10-26 через --bootstrap: все четыре адреса прошли TLS по имени и DoH для обоих доменов Google. Прежний адрес 83.220.169.155 больше не возвращается DNS и не отвечал на DoH, поэтому заменён. Если ни один закреплённый адрес не проходит проверку, адреса ищутся заново при подключении."
     },
     {
       "id": "geohide.ru", "slot": "P4", "aliases": ["geohide"],
@@ -55,46 +47,108 @@
         ],
         "tls": "CN=geohide.ru, h2, valid until 2027-01-05"
       },
-      "note": "Ответы для доменов Google чередуются между четырьмя адресами прокси. В проверках 2026-10-11 один из них (159.194.200.33) не отвечал, поэтому иногда соединению нужен запасной адрес."
-    },
-    {
-      "id": "dns.dns-ai.ru", "slot": "P5", "aliases": ["dns-ai"],
-      "template": "https://dns.dns-ai.ru/dns-query",
-      "servers": ["186.246.48.217", "192.144.59.14", "186.246.49.127"],
-      "origin": "bootstrap 2026-10-11",
-      "bootstrap": {
-        "date": "2026-10-11",
-        "resolved": ["186.246.48.217", "192.144.59.14", "186.246.49.127"],
-        "crossCheck": "system resolver, 1.1.1.1, 8.8.8.8 and 9.9.9.9 returned the same three addresses",
-        "pinned": ["186.246.48.217", "192.144.59.14", "186.246.49.127"],
-        "excluded": [],
-        "tls": "CN=dns-ai.ru, h2, valid until 2026-11-28 .. 2027-01-03"
-      },
       "experimental": true,
-      "knownIssue": "2026-10-11 провайдер отвечал по DoH, но адрес прокси для обоих доменов Google (191.44.41.79) не прошёл TLS из тестовой сети, поэтому проверка перед подключением там отказывает. Проверьте на своей сети через «Замер»."
+      "knownIssue": "2026-10-26 из тестовой сети: три закреплённых адреса сбрасывают соединение, 159.194.200.33 не отвечает, 37.230.192.51 проходит TLS, но DoH для доменов Google не прошёл. Профиль оставлен, но не предлагается автоматически, пока «Замер» не даст вердикт «Работает». Европейский узел того же оператора — eu.geohide.ru."
     },
     {
       "id": "dns.bezmezhau.com", "slot": "P6", "aliases": ["bezmezhau"],
       "template": "https://dns.bezmezhau.com/dns-query",
-      "servers": ["143.20.64.55"],
-      "origin": "bootstrap 2026-10-11",
+      "servers": ["181.215.40.49"],
+      "origin": "bootstrap 2026-10-11; pin replaced by bootstrap 2026-10-26",
       "bootstrap": {
-        "date": "2026-10-11",
-        "resolved": ["143.20.64.55"],
-        "crossCheck": "system resolver, 1.1.1.1, 8.8.8.8 and 9.9.9.9 returned the same address",
-        "pinned": ["143.20.64.55"],
+        "date": "2026-10-26",
+        "resolved": ["181.215.40.49"],
+        "crossCheck": "system resolver and the public DoH cross-checks of --bootstrap returned the same address",
+        "pinned": ["181.215.40.49"],
         "excluded": [],
-        "tls": "CN=dns.bezmezhau.com, h2, valid until 2026-11-24"
+        "tls": "CN=dns.bezmezhau.com, h2, valid until 2027-01-23",
+        "replaced": ["143.20.64.55"]
       },
-      "note": "Заявлен как DoT: порт 853 открыт, но DoH по RFC 8484 тоже отвечает на 443 по пути /dns-query (найден пробой, в документации провайдера его нет) и прошёл проверку для обоих доменов Google."
+      "note": "Заявлен как DoT (853); DoH по RFC 8484 на 443 по пути /dns-query (опубликован на bezmezhau.com/en/setup) прошёл проверку 2026-10-26 для обоих доменов Google. Имя хоста теперь указывает на 181.215.40.49; прежний 143.20.64.55 больше не возвращается DNS. Не путать с dns.bezmezhau.ru — это другой, сейчас не отвечающий адрес."
+    },
+    {
+      "id": "dns.zapret.moe", "slot": "P7", "aliases": ["zapret"],
+      "template": "https://dns.zapret.moe/dns-query",
+      "servers": ["83.217.211.149"],
+      "origin": "bootstrap 2026-10-26; DoH URL and IPv4 published at https://dns.zapret.moe/",
+      "bootstrap": {
+        "date": "2026-10-26",
+        "resolved": ["83.217.211.149"],
+        "crossCheck": "system resolver and every public DoH cross-check of --bootstrap returned the same address",
+        "pinned": ["83.217.211.149"],
+        "excluded": [],
+        "tls": "CN=dns.zapret.moe, h2, Let's Encrypt, valid until 2027-01-06"
+      },
+      "experimental": true,
+      "note": "Новый профиль 2026-10-26: TLS по имени, DoH для обоих доменов Google и TLS до адреса ответа прошли из тестовой сети. Работа самих сервисов через него не проверялась; профиль не предлагается автоматически, пока «Замер» не даст вердикт «Работает»."
+    },
+    {
+      "id": "eu.geohide.ru", "slot": "P8", "aliases": ["geohide-eu"],
+      "template": "https://eu.geohide.ru/dns-query",
+      "servers": ["5.175.161.3", "5.175.161.40", "143.20.64.192", "31.25.239.132"],
+      "origin": "bootstrap 2026-10-26; the operator publishes the EU region and the /dns-query path at https://geohide.ru/",
+      "bootstrap": {
+        "date": "2026-10-26",
+        "resolved": ["5.175.161.3", "5.175.161.40", "143.20.64.192", "31.25.239.132", "37.221.93.128", "37.221.93.141", "45.13.237.213"],
+        "crossCheck": "system resolver and the public DoH cross-checks of --bootstrap",
+        "pinned": ["5.175.161.3", "5.175.161.40", "143.20.64.192", "31.25.239.132"],
+        "excluded": [
+          { "ip": "37.221.93.128", "reason": "TLS: connection closed during the handshake" },
+          { "ip": "45.13.237.213", "reason": "TLS: connection closed during the handshake" },
+          { "ip": "37.221.93.141", "reason": "valid; left out because a profile pins at most four addresses" }
+        ],
+        "tls": "CN=geohide.ru (SAN covers eu.geohide.ru), h2, valid until 2027-01-05"
+      },
+      "experimental": true,
+      "note": "Новый профиль 2026-10-26: европейский узел GeoHide (тот же оператор, что geohide.ru — не независимый резерв). TLS по имени, DoH для обоих доменов Google и TLS до адреса ответа прошли из тестовой сети; работа самих сервисов не проверялась."
     }
   ],
+  "retired": [
+    { "id": "xbox-dns.ru", "slot": "P2", "aliases": [], "date": "2026-10-26", "reason": "Removed from the built-in catalog by the owner. --bootstrap 2026-10-26: TLS by name passes, DoH for the Google domains does not; the 1.0.0 pins time out." },
+    { "id": "dns.dns-ai.ru", "slot": "P5", "aliases": ["dns-ai"], "date": "2026-10-26", "reason": "Removed from the built-in catalog by the owner. --bootstrap 2026-10-26: DoH for the Google domains fails (HTTPS connectivity failure / HTTP 404 / TLS failure on the old pins)." }
+  ],
   "pending": [
+    {
+      "id": "us.geohide.ru",
+      "template": "https://us.geohide.ru/dns-query",
+      "resolved": ["192.255.159.240", "192.255.159.241", "192.3.233.253", "107.175.76.134"],
+      "reason": "Not added. On 2026-10-26 only 192.255.159.241 passed TLS and DoH for both Google domains; the other three addresses reset the connection. Same operator as geohide.ru."
+    },
+    {
+      "id": "dns.geohide.ru",
+      "template": "https://dns.geohide.ru/dns-query",
+      "resolved": ["37.230.192.51", "193.233.112.68", "159.194.200.33", "193.233.112.88", "193.233.112.67"],
+      "reason": "Not added. On 2026-10-26 the same addresses as geohide.ru: resets, timeouts, and no DoH answer for the Google domains."
+    },
+    {
+      "id": "dns.commonnet.work",
+      "template": "https://dns.commonnet.work/dns-query",
+      "resolved": ["94.181.44.39"],
+      "reason": "Not added: on 2026-10-26 TLS by name and DoH for both Google domains passed, but no published operator documentation or DoH URL was found. Add only with an owner-confirmed source."
+    },
+    {
+      "id": "dns.bezmezhau.ru",
+      "template": "https://dns.bezmezhau.ru/dns-query",
+      "resolved": [],
+      "reason": "Legacy address of Bezmezhau (not dns.bezmezhau.com). On 2026-10-26 the name did not resolve. Never was a built-in profile."
+    },
     {
       "id": "dns.astracat.ru",
       "template": "https://dns.astracat.ru:8443/dns-query",
       "resolved": ["135.106.217.200"],
-      "reason": "Not pinned. On 2026-10-11 TCP port 8443 on 135.106.217.200 was reset by the remote side before TLS (ports 4443 behaved the same), 443 answers HTTP 403 for DoH and 853 is DoT. Re-run `--bootstrap https://dns.astracat.ru:8443/dns-query` from another network and move the entry into profiles once it reports a pinned address. The probe and the DoH registration path accept a non-443 port."
+      "reason": "Not pinned. 2026-10-11 and 2026-10-26: the connection to 8443 is reset before TLS; dns.astracat.network on 443 answers DoH with HTTP 502. The probe and the DoH registration path accept a non-443 port."
+    },
+    {
+      "id": "dns.mafioznik.xyz",
+      "template": "https://dns.mafioznik.xyz/dns-query",
+      "resolved": ["103.27.157.38"],
+      "reason": "Not added. 2026-10-26: TLS by name passes, DoH for the Google domains fails; dns2.mafioznik.xyz did not resolve."
+    },
+    {
+      "id": "free.shecan.ir",
+      "template": "https://free.shecan.ir/dns-query",
+      "resolved": ["185.51.200.2", "178.22.122.100"],
+      "reason": "Not added. 2026-10-26: the server certificate expired on 2026-07-10, so TLS validation fails (never bypassed)."
     }
   ]
 }

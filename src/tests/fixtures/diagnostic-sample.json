@@ -1,0 +1,733 @@
+{
+    "State":  "DNS active",
+    "Code":  "DNS_CONFIGURED_APPLICATION_NOT_TESTED",
+    "Status":  {
+                   "State":  "DNS active",
+                   "Code":  "DNS_CONFIGURED_APPLICATION_NOT_TESTED",
+                   "Resolver":  "dns.malw.link",
+                   "Protocol":  "DoH",
+                   "Targets":  [
+                                   "daily-cloudcode-pa.googleapis.com",
+                                   "generativelanguage.googleapis.com"
+                               ],
+                   "Servers":  [
+                                   "179.254.166.171",
+                                   "164.5.224.81"
+                               ],
+                   "Rules":  [
+                                 {
+                                     "Namespace":  "daily-cloudcode-pa.googleapis.com",
+                                     "Name":  "{5E9BF83B-BF28-4AD3-9836-0CCCFCE7CF66}",
+                                     "Fingerprint":  "{\"Comment\":\"AgDns:93bd216ef3b94cad848d6295a3203a43\",\"DisplayName\":\"AgDns 93bd216ef3b94cad848d6295a3203a43\",\"Namespace\":[\"daily-cloudcode-pa.googleapis.com\"],\"NameServers\":[\"164.5.224.81\",\"179.254.166.171\"],\"DirectAccessDnsServers\":[],\"DirectAccessEnabled\":false,\"DirectAccessProxyName\":\"\",\"DirectAccessProxyType\":\"\",\"DirectAccessQueryIPsecEncryption\":\"\",\"DirectAccessQueryIPsecRequired\":false,\"DnsSecEnabled\":false,\"DnsSecQueryIPsecEncryption\":\"\",\"DnsSecQueryIPsecRequired\":false,\"DnsSecValidationRequired\":false,\"IPsecCARestriction\":\"\",\"NameEncoding\":\"disable\"}"
+                                 },
+                                 {
+                                     "Namespace":  "generativelanguage.googleapis.com",
+                                     "Name":  "{6FEFBC6B-6FC5-44BD-9B29-7085270439AC}",
+                                     "Fingerprint":  "{\"Comment\":\"AgDns:93bd216ef3b94cad848d6295a3203a43\",\"DisplayName\":\"AgDns 93bd216ef3b94cad848d6295a3203a43\",\"Namespace\":[\"generativelanguage.googleapis.com\"],\"NameServers\":[\"164.5.224.81\",\"179.254.166.171\"],\"DirectAccessDnsServers\":[],\"DirectAccessEnabled\":false,\"DirectAccessProxyName\":\"\",\"DirectAccessProxyType\":\"\",\"DirectAccessQueryIPsecEncryption\":\"\",\"DirectAccessQueryIPsecRequired\":false,\"DnsSecEnabled\":false,\"DnsSecQueryIPsecEncryption\":\"\",\"DnsSecQueryIPsecRequired\":false,\"DnsSecValidationRequired\":false,\"IPsecCARestriction\":\"\",\"NameEncoding\":\"disable\"}"
+                                 }
+                             ],
+                   "JournalPhase":  "Active",
+                   "Conflicts":  [
+
+                                 ],
+                   "TransportProof":  "Not verified on wire",
+                   "Application":  "AUTH_REQUIRED_FOR_E2E_TEST",
+                   "Active":  true
+               },
+    "Network":  {
+                    "TimestampUtc":  "2026-10-10T22:59:05.2325103Z",
+                    "Resolver":  "dns.malw.link",
+                    "Target":  "daily-cloudcode-pa.googleapis.com",
+                    "Protocol":  "RFC8484 HTTP/2 with default TLS validation",
+                    "Candidates":  [
+                                       {
+                                           "Server":  "179.254.166.171",
+                                           "DohValidated":  true,
+                                           "PlainValidated":  false,
+                                           "TargetA":  [
+                                                           "179.254.166.174"
+                                                       ],
+                                           "TargetAnswers":  {
+                                                                 "daily-cloudcode-pa.googleapis.com":  [
+                                                                                                           "179.254.166.174"
+                                                                                                       ],
+                                                                 "generativelanguage.googleapis.com":  [
+                                                                                                           "179.254.166.174"
+                                                                                                       ]
+                                                             },
+                                           "PlainAssessment":  "DNS_UNEXPECTED_ANSWER: UDP/TCP differ from pinned encrypted DoH; possible DNS interception/TUN",
+                                           "DohTls":  "TLS_OK_HTTP_404",
+                                           "PlainTls":  "TLS_OK_HTTP_404",
+                                           "Probes":  [
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.115.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.116.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  19,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.115.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.116.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  66,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "179.254.166.174"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  349,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  18,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  66,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2a12:bec4:1bb0:2a30::2"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  351,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.116.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.115.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  19,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.116.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.115.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  66,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "179.254.166.174"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  349,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  18,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  66,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2a12:bec4:1bb0:2a30::2"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  351,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "23.12.158.97"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  2,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "23.12.158.97"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  47,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2.23.246.101"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  331,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  2,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  44,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2a02:26f0:3400:187::356e",
+                                                                                "2a02:26f0:3400:199::356e",
+                                                                                "2a02:26f0:3400:191::356e",
+                                                                                "2a02:26f0:3400:188::356e",
+                                                                                "2a02:26f0:3400:185::356e"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  330,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "179.254.166.171",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          }
+                                                      ]
+                                       },
+                                       {
+                                           "Server":  "164.5.224.81",
+                                           "DohValidated":  true,
+                                           "PlainValidated":  false,
+                                           "TargetA":  [
+                                                           "179.254.166.174"
+                                                       ],
+                                           "TargetAnswers":  {
+                                                                 "daily-cloudcode-pa.googleapis.com":  [
+                                                                                                           "179.254.166.174"
+                                                                                                       ],
+                                                                 "generativelanguage.googleapis.com":  [
+                                                                                                           "179.254.166.174"
+                                                                                                       ]
+                                                             },
+                                           "PlainAssessment":  "DNS_UNEXPECTED_ANSWER: UDP/TCP differ from pinned encrypted DoH; possible DNS interception/TUN",
+                                           "DohTls":  "TLS_OK_HTTP_404",
+                                           "PlainTls":  "TLS_OK_HTTP_404",
+                                           "Probes":  [
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.115.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.116.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  4,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.115.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.116.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  56,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "179.254.166.174"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  231,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  4,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  56,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2a12:bec4:1bb0:2a30::2"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  231,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "daily-cloudcode-pa.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.116.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.115.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  5,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "172.217.116.4",
+                                                                                "172.217.113.4",
+                                                                                "172.217.119.4",
+                                                                                "172.217.117.4",
+                                                                                "172.217.112.4",
+                                                                                "172.217.114.4",
+                                                                                "172.217.118.4",
+                                                                                "172.217.115.4"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  86,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "179.254.166.174"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  291,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  2,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  75,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2a12:bec4:1bb0:2a30::2"
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  223,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "generativelanguage.googleapis.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "23.12.158.97"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  2,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "23.12.158.97"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  51,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2.23.90.89"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  231,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  1
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  2,
+                                                              "Transport":  "UDP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_NODATA",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+
+                                                                            ],
+                                                              "Cnames":  [
+
+                                                                         ],
+                                                              "Milliseconds":  51,
+                                                              "Transport":  "TCP",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          },
+                                                          {
+                                                              "Code":  "DNS_OK",
+                                                              "Rcode":  0,
+                                                              "Addresses":  [
+                                                                                "2001:2030:4e:8c::356e",
+                                                                                "2001:2030:4e:90::356e",
+                                                                                "2001:2030:4e:ac::356e",
+                                                                                "2001:2030:4e:a7::356e"
+                                                                            ],
+                                                              "Cnames":  [
+                                                                             "www.microsoft.com-c-3.edgekey.net",
+                                                                             "e13678.dscb.akamaiedge.net"
+                                                                         ],
+                                                              "Milliseconds":  263,
+                                                              "Transport":  "DoH HTTP/2 (TLS validated on success, pinned IP)",
+                                                              "Server":  "164.5.224.81",
+                                                              "Host":  "www.microsoft.com",
+                                                              "Type":  28
+                                                          }
+                                                      ]
+                                       }
+                                   ],
+                    "Ipv6":  "Not selected: release uses validated IPv4 only",
+                    "Application":  "AUTH_REQUIRED_FOR_E2E_TEST",
+                    "Trust":  "Provider can route selected TLS through its SNI proxy; deployed infrastructure not independently audited"
+                },
+    "SystemResolver":  [
+                           {
+                               "Host":  "daily-cloudcode-pa.googleapis.com",
+                               "A":  [
+                                         "179.254.166.174"
+                                     ],
+                               "AAAA":  [
+                                            "2a12:bec4:1bb0:2a30::2"
+                                        ]
+                           },
+                           {
+                               "Host":  "generativelanguage.googleapis.com",
+                               "A":  [
+                                         "179.254.166.174"
+                                     ],
+                               "AAAA":  [
+                                            "2a12:bec4:1bb0:2a30::2"
+                                        ]
+                           }
+                       ],
+    "NrptEffective":  "Policy + Windows resolver answers match (wire destination unverified)",
+    "DoHEncrypted":  "Direct probe: see Network; Windows resolver wire encryption: NOT VERIFIED",
+    "ControlAnswers":  [
+                           "23.12.158.97"
+                       ],
+    "VpnPresent":  [
+                       "Famatech Radmin VPN Ethernet Adapter",
+                       "sing-tun Tunnel"
+                   ],
+    "Application":  "AUTH_REQUIRED_FOR_E2E_TEST",
+    "Note":  "Provider uses DNS + third-party SNI proxy. TLS verification stays enabled. DNS answers do not prove account eligibility or model response."
+}
+

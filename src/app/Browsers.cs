@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // Does a browser take its DNS from Windows (and so go through the bridge for "All Google") or does it bring its own secure DNS (DoH) and skip the
  // bridge's rules? Read-only: the registry, a few settings files of the browser and nothing else. The program never changes a browser's settings.
  // Sources: the Chrome/Edge enterprise policy docs (DnsOverHttpsMode, DnsOverHttpsTemplates), Mozilla policy templates (DNSOverHTTPS), network.trr.mode.
@@ -158,7 +158,7 @@ namespace AgDns {
   public static bool CanOpenSettings(BrowserInfo b,IBrowserEnv env)=>b!=null&&b.Family!=BrowserFamily.Other&&!string.IsNullOrEmpty(b.SettingsUrl)&&ByExe(b.Exe)!=null&&Path.IsPathRooted(b.Exe??"")&&env.FileExists(b.Exe);
   static BrowserVerdict V(BypassStatus s,string code,bool policy=false)=>new BrowserVerdict{Status=s,Code=code,ByPolicy=policy};
 
-  // Chromium: the policy wins over the person's own setting. A built-in secure resolver is used when the mode is "secure" with servers, or "automatic" with servers
+  // Chromium: the policy wins over the user's own setting. A built-in secure resolver is used when the mode is "secure" with servers, or "automatic" with servers
   // given explicitly; "automatic" without servers only upgrades the system's resolver, which Chromium does not do while Windows has name-resolution policy rules (NRPT).
   static BrowserVerdict Classify(string mode,string templates,bool policy) {
    mode=(mode??"").Trim().ToLowerInvariant();bool servers=!string.IsNullOrWhiteSpace(templates);
@@ -188,7 +188,7 @@ namespace AgDns {
    return k.Full?V(BypassStatus.Follows,"NO_CUSTOM_DNS"):V(BypassStatus.Unknown,"NOT_VERIFIED");
   }
 
-  // Firefox: policy (registry, then policies.json next to the program), then the person's prefs.js of the default profile.
+  // Firefox: policy (registry, then policies.json next to the program), then the user's prefs.js of the default profile.
   // network.trr.mode: 2 = secure DNS first, 3 = secure DNS only; 0 and 5 = off. Without any of them Firefox may switch it on by itself (a regional roll-out), so that is "unknown".
   static BrowserVerdict EvaluateFirefox(BrowserInfo b,Known k,IBrowserEnv env) {
    if(k.Policy!=null)foreach(bool machine in new[]{true,false}){

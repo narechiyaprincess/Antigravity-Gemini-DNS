@@ -23,7 +23,7 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'  # isolated: tests never touch 
 
 Write-Host "--- Executing Tier 5: Release 1.3.0 Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 Assert-Condition $haveExe 'T5_X00' "Built exe is available for the single-exe tests ($sourceExe)" 'R13-EXE' -FailureMessage 'Run src\app\Build.ps1 first (or set AGDNS_EXE)'
 
@@ -31,7 +31,7 @@ Assert-Condition $haveExe 'T5_X00' "Built exe is available for the single-exe te
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 90) {
     # System.Diagnostics.Process (not Start-Process): Windows PowerShell 5.1 loses ExitCode for Start-Process -PassThru.
@@ -71,15 +71,15 @@ foreach ($p in $cat.profiles) {
 Assert-Condition ($allPublic -and $allHttps) 'T5_C03' 'Every pinned server is a public IPv4 and every template is an https URL with a host name' 'R13-CAT'
 
 $byId = @{}; foreach ($p in $cat.profiles) { $byId[$p.id] = $p }
-Assert-Condition ($byId['geohide.ru'].template -eq 'https://geohide.ru/dns-query' -and $byId['dns.dns-ai.ru'].template -eq 'https://dns.dns-ai.ru/dns-query' -and $byId['dns.bezmezhau.com'].template -eq 'https://dns.bezmezhau.com/dns-query') 'T5_C04' 'GeoHide, DNS-AI and BezMezhau use the DoH templates given in the task' 'R13-CAT'
+Assert-Condition ($byId['geohide.ru'].template -eq 'https://geohide.ru/dns-query' -and $byId['dns.zapret.moe'].template -eq 'https://dns.zapret.moe/dns-query' -and $byId['dns.bezmezhau.com'].template -eq 'https://dns.bezmezhau.com/dns-query' -and -not $byId.ContainsKey('dns.dns-ai.ru') -and -not $byId.ContainsKey('xbox-dns.ru') -and @($cat.retired | ForEach-Object { $_.id }).Count -eq 2) 'T5_C04' 'GeoHide, Zapret and BezMezhau use their published DoH templates; DNS-AI and Xbox DNS are retired' 'R13-CAT'
 
 Assert-Condition (($cat.pending | Where-Object { $_.id -eq 'dns.astracat.ru' -and $_.template -eq 'https://dns.astracat.ru:8443/dns-query' -and $_.reason }) -and -not $byId.ContainsKey('dns.astracat.ru')) 'T5_C05' 'Astracat (:8443) is recorded as pending with a reason, not shipped as an unverified pin' 'R13-CAT'
 
-$p123 = @{ 'dns.malw.link' = '179.254.166.171,164.5.224.81'; 'xbox-dns.ru' = '185.185.185.185,185.185.185.186'; 'dns.comss.one' = '83.220.169.155,195.133.25.16,212.109.195.93' }  # P3 pins validated by bootstrap on 2026-10-12.
+$p123 = @{ 'dns.malw.link' = '179.254.166.171,164.5.224.81'; 'dns.comss.one' = '195.133.25.16,212.109.195.93,94.250.253.55,185.146.157.78' }  # P3 pins validated by bootstrap on 2026-10-26.
 $pinsKept = $true; foreach ($k in $p123.Keys) { if (($byId[$k].servers -join ',') -ne $p123[$k]) { $pinsKept = $false } }
-Assert-Condition $pinsKept 'T5_C06' 'P1 and P2 pins are unchanged from 1.2.0; P3 carries the addresses validated by bootstrap on 2026-10-12' 'R13-CAT'
+Assert-Condition $pinsKept 'T5_C06' 'P1 pins are unchanged from 1.2.0; P3 carries the addresses validated by bootstrap on 2026-10-26' 'R13-CAT'
 
-$bootstrapped = @('geohide.ru', 'dns.dns-ai.ru', 'dns.bezmezhau.com', 'dns.comss.one') | ForEach-Object { $byId[$_] }
+$bootstrapped = @('geohide.ru', 'dns.bezmezhau.com', 'dns.comss.one', 'dns.zapret.moe', 'eu.geohide.ru') | ForEach-Object { $byId[$_] }
 $provenance = $true
 foreach ($p in $bootstrapped) { if (-not $p.bootstrap.date -or -not $p.bootstrap.crossCheck -or -not $p.bootstrap.tls -or (@($p.servers | Where-Object { $_ -notin @($p.bootstrap.pinned) }).Count -gt 0) -or (@($p.bootstrap.pinned | Where-Object { $_ -notin @($p.bootstrap.resolved) }).Count -gt 0)) { $provenance = $false } }
 Assert-Condition $provenance 'T5_C07' 'Each bootstrapped pin is a resolved address with recorded date, cross-check and TLS evidence' 'R13-CAT'
@@ -89,7 +89,7 @@ Assert-Condition ($byId['dns.bezmezhau.com'].note -match 'DoT' -and $byId['dns.b
 $progText = Get-Content -LiteralPath (Join-Path $sourceRoot 'Program.cs') -Raw
 Assert-Condition ($progText -notmatch '\["P2"\]=\(new\[\]' -and $progText -match 'ProfileCatalog\.BuiltIn\.Profiles') 'T5_C09' 'Program.cs builds KnownProfiles from the catalog instead of hard-coded provider tables' 'R13-CAT'
 
-Assert-Condition ($progText -match 'static async Task<string> FirstTls\(' -and $progText -match 'FirstTls\(h0\.Addresses,host\)' -and $progText -notmatch 'Tls\(h0\.Addresses\[0\],host\)') 'T5_C10' 'Preflight TLS validation accepts any reachable answer address (up to four) instead of failing on one dead proxy address' 'R13-CAT'
+Assert-Condition ($progText -match 'static async Task<string> FirstTls\(' -and $progText -match 'FirstTls\(h0\.Addresses,host,ct\)' -and $progText -match 'addresses\.Take\(4\)' -and $progText -notmatch 'Tls\(h0\.Addresses\[0\],host\)') 'T5_C10' 'Cancellable preflight TLS validation accepts any reachable answer address (up to four) instead of failing on one dead proxy address' 'R13-CAT'
 
 # ==============================================================================
 # R13-PORT: non-443 DoH templates (Astracat :8443) through the engine's registration path (mock cmdlets)
@@ -117,9 +117,9 @@ foreach ($bad in @('http://dns.example/dns-query', 'ftp://dns.example/dns-query'
 
 # Engine accepts the exe path from the host process (embedded-script mode) and keeps the sibling lookup as the default.
 $engineFile = Join-Path $sourceRoot 'Engine.ps1'
-$withParam = & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -Command ". '$engineFile' -LibraryOnly -ExePath 'C:\Staged\bin\AntigravityDnsUnlocker.exe'; `$script:Exe"
+$withParam = & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -Command ". '$engineFile' -LibraryOnly -ExePath 'C:\Staged\bin\AntigravityGeminiDns.exe'; `$script:Exe"
 $withoutParam = & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -Command ". '$engineFile' -LibraryOnly; `$script:Exe"
-Assert-Condition ($withParam -eq 'C:\Staged\bin\AntigravityDnsUnlocker.exe' -and $withoutParam -eq (Join-Path $sourceRoot 'AntigravityDnsUnlocker.exe')) 'T5_P04' 'Engine.ps1 -ExePath selects the callback exe; library use still defaults to the sibling file' 'R13-PORT'
+Assert-Condition ($withParam -eq 'C:\Staged\bin\AntigravityGeminiDns.exe' -and $withoutParam -eq (Join-Path $sourceRoot 'AntigravityGeminiDns.exe')) 'T5_P04' 'Engine.ps1 -ExePath selects the callback exe; library use still defaults to the sibling file' 'R13-PORT'
 
 # ==============================================================================
 # R13-EXE: one exe, nothing beside it
@@ -127,7 +127,9 @@ Assert-Condition ($withParam -eq 'C:\Staged\bin\AntigravityDnsUnlocker.exe' -and
 Assert-Condition ($haveExe -and @(Get-ChildItem -LiteralPath $clean -Force).Count -eq 1) 'T5_E01' 'The test folder contains exactly one file: the exe' 'R13-EXE'
 if ($haveExe) {
     $exeSize = (Get-Item -LiteralPath $exe).Length
-    Assert-Condition ($exeSize -lt 80MB) 'T5_E02' "Compressed single-file exe is under 80 MB (actual $([math]::Round($exeSize/1MB,1)) MB; 1.2.0 was 110.9 MB)" 'R13-EXE'
+    # The final release keeps the full WinForms runtime and compresses the single file without R2R.
+    $projectXml=Get-Content -LiteralPath (Join-Path $sourceRoot 'AntigravityGeminiDns.csproj') -Raw
+    Assert-Condition ($exeSize -gt 0 -and $exeSize -lt 80MB -and $projectXml -match '<PublishSingleFile>true</PublishSingleFile>' -and $projectXml -match '<PublishTrimmed>false</PublishTrimmed>' -and $projectXml -match '<PublishReadyToRun>false</PublishReadyToRun>' -and $projectXml -match '<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>') 'T5_E02' "Untrimmed compressed single-file configuration; size $([math]::Round($exeSize/1MB,1)) MiB below 80 MiB" 'R13-EXE'
 
     $selfTest = Invoke-Exe @('--self-test') 150
     $m = [regex]::Match([string]$selfTest.Out, 'OFFLINE_WIRE_PASS (\d+)')
@@ -172,8 +174,9 @@ if ($haveExe) {
     Assert-Condition ($rkj.RegistryKey -like '*CurrentVersion\Run' -and $rkj2.RegistryKey -like '*AgDnsTest*') 'T5_E10' 'AGDNS_TEST_RUN_KEY redirects only into HKCU\Software\AgDnsTest\ and is ignored elsewhere' 'R13-EXE'
 }
 
-$portableFiles = @(if (Test-Path (Join-Path $projectRoot '.work\build')) { Get-ChildItem (Join-Path $projectRoot '.work\build') -Force | ForEach-Object { $_.Name } })
-Assert-Condition (($portableFiles.Count -eq 0) -or ($portableFiles.Count -eq 1 -and $portableFiles[0] -eq 'AntigravityDnsUnlocker.exe')) 'T5_E11' 'src\.work\build is absent or holds only AntigravityDnsUnlocker.exe (no scripts, no pdb)' 'R13-EXE' -FailureMessage ("found: " + ($portableFiles -join ', '))
+$portableFiles = @(if ($haveExe) { Get-ChildItem -LiteralPath (Split-Path -Parent $sourceExe) -Force | ForEach-Object { $_.Name } })
+$allowedPortableFiles = @((Split-Path -Leaf $sourceExe), 'BUILDINFO.txt', 'SHA256SUMS.txt', 'LICENSES.txt')
+Assert-Condition (@($portableFiles | Where-Object { $_ -notin $allowedPortableFiles }).Count -eq 0) 'T5_E11' 'The selected directory holds only the candidate exe and optional release metadata (no runtime dependencies, scripts or pdb); other directories are preserved' 'R13-EXE' -FailureMessage ("found: " + ($portableFiles -join ', '))
 
 # ==============================================================================
 # R13-BENCH: benchmark on the synthetic wire (dead / slow / unstable / partial)
@@ -242,14 +245,20 @@ Assert-Condition ($limited -and $limited.Truncated -and -not $limited.Cancelled 
 # ==============================================================================
 $mf = Get-Content -LiteralPath (Join-Path $sourceRoot 'MainForm.cs') -Raw -Encoding UTF8
 $uk = Get-Content -LiteralPath (Join-Path $sourceRoot 'UiKit.cs') -Raw -Encoding UTF8
+$serviceUi = Get-Content -LiteralPath (Join-Path $sourceRoot 'MainForm.Service.cs') -Raw -Encoding UTF8
+$assistedUi = Get-Content -LiteralPath (Join-Path $sourceRoot 'MainForm.Assisted.cs') -Raw -Encoding UTF8
+$connectionTrust = Get-Content -LiteralPath (Join-Path $sourceRoot 'ConnectionTrust.cs') -Raw -Encoding UTF8
+$providerConsent = Get-Content -LiteralPath (Join-Path $sourceRoot 'ProviderConsentForm.cs') -Raw -Encoding UTF8
 $mainBody = [regex]::Match($mf, 'void BuildMain\(Panel pg\)\{.*?\n  \}', 'Singleline').Value
 Assert-Condition ($mainBody.Length -gt 200 -and $mainBody -notmatch 'Card\(' -and $mainBody -notmatch 'RoundPanel') 'T5_U01' 'The main page builds no card: logo, status and buttons sit directly on the page background' 'R13-UI'
 $hh = [regex]::Match($mf, 'HeaderH=(\d+)')
 Assert-Condition ($mf -notmatch 'title\.(Text|Visible|Bounds)' -and $mf -notmatch 'smallLogo' -and $mf -notmatch '"Запуск"' -and $hh.Success -and [int]$hh.Groups[1].Value -le 12) 'T5_U02' 'No page has a title or a small top-right logo (the form has neither; the pages start under a 12-unit margin at most)' 'R13-UI'
 $wh = [regex]::Match($mf, 'const int W=(\d+),H=(\d+)')
-Assert-Condition ($wh.Success -and ([int]$wh.Groups[1].Value * [int]$wh.Groups[2].Value) -le (0.75 * 420 * 690)) 'T5_U03' "Window layout area is at most 75% of 1.2.0 (420x690): now $($wh.Groups[1].Value)x$($wh.Groups[2].Value)" 'R13-UI'
-Assert-Condition ($mf -match 'statusLabel\.ForeColor=isActive\?Theme\.Green' -and $mf -match '"Мост подключён"' -and $mf -match 'bigLogo') 'T5_U04' 'Green "Мост подключён" status and the central logo are preserved' 'R13-UI'
-Assert-Condition ($mf -match 'NotifyIcon' -and $mf -match 'CloseToTray' -and $mf -match 'RegisterShowEvent' -and $progText -match 'Local\\AntigravityDnsUnlocker' -and $mf -match 'EnsureTrust' -and $mf -match 'TryParseCustom' -and $mf -match 'tg://resolve\?domain=' -and $mf -match 'https://t\.me/' -and $mf -match 'your_sister_loves_me') 'T5_U05' 'Tray, close-to-tray, single instance, trust consent, custom profile and Telegram (tg:// + t.me) are preserved' 'R13-UI'
+# The Material compact canvas keeps the primary flow unscrolled through 150% DPI.
+# Smaller work areas use one scrolling viewport; navigation stays pinned.
+Assert-Condition ($wh.Success -and [int]$wh.Groups[1].Value -eq 380 -and [int]$wh.Groups[2].Value -eq 584 -and $serviceUi -match 'page.AutoScroll=true' -and $serviceUi -match 'rect.Bottom-nav.Height') 'T5_U03' "The 380x584 DIP canvas keeps a scrolling viewport and bottom navigation" 'R13-UI'
+Assert-Condition ($serviceUi -match 'Readiness\.State==ReadinessState\.Ready' -and $serviceUi -match 'Completeness==EvidenceCompleteness\.Complete' -and $serviceUi -match 'Confirmed==serviceReport\.Readiness\.Required' -and $mf -match 'statusLabel\.ForeColor=ServiceReady\?Theme\.Green' -and $mf -match '"Мост подключён"' -and $mf -match 'bigLogo') 'T5_U04' 'Green requires current complete application readiness; connected policy text and central logo are preserved' 'R13-UI'
+Assert-Condition ($mf -match 'NotifyIcon' -and $mf -match 'CloseToTray' -and $mf -match 'RegisterShowEvent' -and $progText -match 'StorageName="AntigravityDnsUnlocker"' -and $progText -match '@"Local\\"\+AppIdentity\.StorageName\+"UI-"' -and $assistedUi -match 'AuthorizeConnectionSet' -and $assistedUi -match 'ConnectionTrust.Has' -and $assistedUi -match 'if\(!ProviderConsentForm.Confirm[^\r\n]+return false;' -and $providerConsent -match 'ShowDialog\(owner\)==DialogResult.Yes' -and $connectionTrust -match 'CoveredPins' -and $connectionTrust -match 'EndpointIdentity' -and $mf -match 'TryParseCustom' -and $mf -match 'tg://resolve\?domain=' -and $mf -match 'https://t\.me/' -and $mf -match 'your_sister_loves_me') 'T5_U05' 'Tray, close-to-tray, single instance, trust consent, custom profile and Telegram (tg:// + t.me) are preserved' 'R13-UI'
 Assert-Condition ($uk -match 'Labels=\{"Мост","Замер"' -and $uk -match 'class BenchTable' -and $mf -match 'Выбрать лучший' -and $mf -match 'Измерить' -and $mf -match 'benchCts\?\.Cancel') 'T5_U06' 'A "Замер" tab with a results table, Measure/Cancel and "Выбрать лучший" exists' 'R13-UI'
 Assert-Condition ($mf -match 'Benchmark\.AppendHistory' -and $mf -match 'LoadBenchHistory' -and $mf -match 'Task\.Run\(\(\)=>Benchmark\.RunAsync' -and $mf -match 'benchCooldownUntil') 'T5_U07' 'Benchmark runs off the UI thread, persists history, and has a cooldown against repeated runs' 'R13-UI'
 
@@ -270,12 +279,17 @@ if ($haveExe) {
     Add-Type -AssemblyName System.Drawing
     $img = [Drawing.Bitmap]::FromFile((Join-Path $shots 'smoke.png'))
     try {
-        # left and right of the central logo: inside the old raised card, bare background now (and no top-right logo)
-        $px = $img.GetPixel([int]($img.Width * 0.12), [int]($img.Height * 0.17))
-        $logoRowBg = $img.GetPixel([int]($img.Width * 0.88), [int]($img.Height * 0.17))
+        # Sample outer body margins, away from the new left status mark and text.
+        $px = $img.GetPixel([int]($img.Width * 0.025), [int]($img.Height * 0.25))
+        $logoRowBg = $img.GetPixel([int]($img.Width * 0.975), [int]($img.Height * 0.25))
     } finally { $img.Dispose() }
-    Assert-Condition ($px.R -le 12 -and $px.G -le 12 -and $px.B -le 14 -and $logoRowBg.R -le 12 -and $logoRowBg.B -le 14) 'T5_U10' "Main page pixels beside the content are the black background, no raised card (sample $($px.R),$($px.G),$($px.B))" 'R13-UI'
-    Assert-Condition ($sm.Success -and ([double]$sm.Groups[3].Value / [double]$sm.Groups[2].Value) -lt 1.55) 'T5_U11' 'Rendered window is more compact (aspect ratio under 1.55 vs 1.64 in 1.2.0)' 'R13-UI'
+    $themeSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'UiKit.cs') -Raw -Encoding UTF8
+    $bgMatch = [regex]::Match($themeSource, 'Bg=Color.FromArgb\((\d+),(\d+),(\d+)\)')
+    $expectedBg = [Drawing.Color]::FromArgb([int]$bgMatch.Groups[1].Value,[int]$bgMatch.Groups[2].Value,[int]$bgMatch.Groups[3].Value)
+    Assert-Condition ($bgMatch.Success -and $px.ToArgb() -eq $expectedBg.ToArgb() -and $logoRowBg.ToArgb() -eq $expectedBg.ToArgb()) 'T5_U10' "Main page pixels beside the content match the theme background, no raised card (sample $($px.R),$($px.G),$($px.B))" 'R13-UI'
+    $renderDpi = [regex]::Match([string]$smoke.Out, '; dpi (\d+)')
+    $renderScale = if ($renderDpi.Success) { [double]$renderDpi.Groups[1].Value / 96 } else { 0 }
+    Assert-Condition ($sm.Success -and $renderScale -gt 0 -and [math]::Abs([double]$sm.Groups[2].Value - 380*$renderScale) -le 2 -and [math]::Abs([double]$sm.Groups[3].Value - 584*$renderScale) -le 2) 'T5_U11' 'Rendered client preserves the design dimensions at the actual Windows DPI' 'R13-UI'
 }
 
 Assert-HostSafetyBaselineUnchanged "Tier 5 Completion"

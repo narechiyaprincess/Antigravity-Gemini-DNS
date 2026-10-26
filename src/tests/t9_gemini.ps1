@@ -1,5 +1,5 @@
 ﻿# t9_gemini.ps1 - Tier 9: Gemini scope, offline only.
-# The second host set of the catalog (geminiTargets) is a scope of the bridge: off = exactly the old behaviour, on = rules for every host, a change of scope on a
+# The second host set of the catalog (geminiTargets) is a scope of the bridge: off = the old behaviour, on = rules for every host, a change of scope on a
 # working bridge is a compensated profile switch (the old bridge stays if the new one cannot be applied), and nothing but the catalog can name a host.
 # Engine tests run on mock cmdlets and a scratch directory; nothing contacts a provider or touches NRPT/DoH/adapters/state.json.
 # This file is saved with a BOM: Windows PowerShell 5.1 mangles non-ASCII text in a script without one.
@@ -27,12 +27,12 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'
 
 Write-Host "--- Executing Tier 9: Gemini host set Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 60) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
@@ -118,7 +118,7 @@ Assert-Condition ($b.State -eq 'DNS active' -and $script:MockRules.Count -eq 4 -
 # G04: nothing but the catalog can name a host
 # ==============================================================================
 $prog = Get-Src 'Program.cs'
-Assert-Condition ($prog -notmatch '"--targets"' -and $prog -notmatch '"--domains"' -and $prog -match 'TargetsFor\(Gemini\)' -and $prog -match '\(Gemini\?" --gemini":""\)') 'T9_G04a' 'Program.cs has no flag that takes hosts; the hosts come from TargetsFor(Gemini) and the elevated copy gets only the --gemini flag' 'R-GEM'
+Assert-Condition ($prog -notmatch '"--targets"' -and $prog -notmatch '"--domains"' -and $prog -match 'TargetsOf\(Core,Gemini,Google\)' -and $prog -match '\(Gemini\?" --gemini":""\)') 'T9_G04a' 'Program.cs has no flag that takes hosts; the hosts come from TargetsFor(Gemini) and the elevated copy gets only the --gemini flag' 'R-GEM'
 if ($haveExe) {
     $r1 = Invoke-Exe @('--enable', '--targets', 'evil.example')
     $r2 = Invoke-Exe @('--network', '--gemini', '--targets', 'evil.example')
@@ -197,7 +197,7 @@ Assert-Condition ($readOk -and $restoreOk -and (Read-State).Phase -eq 'Restored'
 # a journal in the 1.3.0 form (no new fields) keeps working
 $null = New-Bridge 't9_g08c' $core
 $raw = Get-Content -LiteralPath $script:StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-$old = [pscustomobject]@{ Schema = $raw.Schema; Owner = $raw.Owner; Phase = $raw.Phase; Protocol = $raw.Protocol; Targets = $raw.Targets; Servers = $raw.Servers; Rules = $raw.Rules; Doh = $raw.Doh; UpdatedUtc = $raw.UpdatedUtc }
+$old = [pscustomobject]@{ Schema = 1; Owner = $raw.Owner; Phase = $raw.Phase; Protocol = $raw.Protocol; Targets = $raw.Targets; Servers = $raw.Servers; Rules = $raw.Rules; Doh = $raw.Doh; UpdatedUtc = $raw.UpdatedUtc }
 [IO.File]::WriteAllText($script:StatePath, ($old | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 $script:Targets = $all4
 $ok130 = $true; try { $s130 = Get-Status; Restore-State (Read-State) | Out-Null } catch { $ok130 = $false }
@@ -290,7 +290,8 @@ Assert-Condition ($res -like 'NRPT_CONFLICT*' -and $script:MockWriteCount -eq $b
 # G12: window contract (source): after a reconnect the toggle follows the journal; a failure is worded for the scope that was asked for
 # ==============================================================================
 $mf = Get-Src 'MainForm.cs'
-Assert-Condition ($mf -match 'await Mutate\("enable"\);\}\s*finally\{scopeApplying=false;\}\s*if\(!SyncGeminiFromJournal\(\)' -and $mf -match 'ShowOperationFailure\(result\.Output,geminiAtStart\)' -and $mf -match 'ShowFailure\(plan\.Error,null,geminiAtStart\)' -and $mf -match 'if\(busy\|\|benchRunning\)\{SetScope\(ScopeNow\);return;\}') 'T9_G12' 'MainForm: the scope selector (since 2026-10-13; was the Gemini toggle) is refused during a measurement, follows the journal after a refused reconnect, and failures are worded for the scope that was asked for' 'R-GEM'
+$assistedMain = Get-Content -LiteralPath (Join-Path $sourceRoot "MainForm.Assisted.cs") -Raw -Encoding UTF8
+Assert-Condition ($mf -match 'await Mutate\("enable"\);\}\s*finally\{scopeApplying=false;\}\s*if\(!SyncGeminiFromJournal\(\)' -and $assistedMain.Contains('var p=Current;bool geminiAtStart=Program.Gemini;') -and $assistedMain.Contains('ShowOperationFailure(unconfirmed,geminiAtStart)') -and $assistedMain.Contains('ShowFailure(failure,null,geminiAtStart)') -and $mf -match 'if\(busy\|\|benchRunning\)\{SetScope\(ScopeNow\);return;\}') 'T9_G12' 'MainForm: the scope selector (since 2026-10-13; was the Gemini toggle) is refused during a measurement, follows the journal after a refused reconnect, and failures are worded for the scope that was asked for' 'R-GEM'
 
 # ==============================================================================
 # G10: the exe's --gemini switch really widens the host set (and only it)

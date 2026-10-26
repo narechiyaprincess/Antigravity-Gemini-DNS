@@ -5,7 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Text.Json;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  public sealed class ProfileSpec {
   public string Id{get;set;}public string Slot{get;set;}public string[] Aliases{get;set;}=new string[0];
   public string Template{get;set;}public string[] Servers{get;set;}=new string[0];
@@ -13,19 +13,23 @@ namespace AgDns {
   public bool Custom{get;set;}
   // Listed in the catalog but not recommended: "Select best" skips it until a benchmark gives it the "Good" verdict.
   public bool Experimental{get;set;}
-  public string Label=>Id+(string.IsNullOrEmpty(Slot)?"":"  ·  "+Slot);
+  public string Label=>Id;   // the provider is named by its DNS name only; the slot (P1..) stays in the catalog data
   public string Host=>new Uri(Template).IdnHost;
   public int Port=>new Uri(Template).Port;
  }
  public sealed class PendingProfile {
   public string Id{get;set;}public string Template{get;set;}public string[] Resolved{get;set;}=new string[0];public string Reason{get;set;}
  }
+ // A built-in that was removed. Its names are never reused, so an old setting, journal or --profile cannot silently mean another provider.
+ public sealed class RetiredProfile {
+  public string Id{get;set;}public string Slot{get;set;}public string[] Aliases{get;set;}=new string[0];public string Date{get;set;}public string Reason{get;set;}
+ }
  // Versioned provider data (embedded profiles.json). Providers are data, not code: add or change entries there.
  public sealed class ProfileCatalog {
   public int Schema{get;set;}public string Version{get;set;}public string Updated{get;set;}public string Policy{get;set;}
   // The only place the two Google domains and the default profile are defined; Engine.ps1 receives them as parameters (or reads the staged copy of this file).
   public string Default{get;set;}public string[] Targets{get;set;}=new string[0];
-  // Optional second set of exact host names for the Gemini web app (measured 2026-10-13 at every catalog provider). Used only when the person picks the «+ Gemini Desktop» level; never a wildcard.
+  // Optional second set of exact host names for the Gemini web app (measured 2026-10-13 at every catalog provider). Used only when the user picks the «+ Gemini Desktop» level; never a wildcard.
   public string[] GeminiTargets{get;set;}=new string[0];
   public string[] TargetsFor(bool gemini)=>gemini?Targets.Concat(GeminiTargets??new string[0]).ToArray():Targets;
   // "+ Браузер": suffix namespaces (".google.com" = every name under google.com) on top of the core and Gemini hosts. They become NRPT rules only;
@@ -36,6 +40,7 @@ namespace AgDns {
   public ProfileSpec DefaultProfile=>Find(Default);
   public ProfileSpec[] Profiles{get;set;}=new ProfileSpec[0];
   public PendingProfile[] Pending{get;set;}=new PendingProfile[0];
+  public RetiredProfile[] Retired{get;set;}=new RetiredProfile[0];
   static readonly JsonSerializerOptions Options=new JsonSerializerOptions{PropertyNameCaseInsensitive=true,ReadCommentHandling=JsonCommentHandling.Skip,AllowTrailingCommas=true};
   static ProfileCatalog builtIn;
   public static ProfileCatalog BuiltIn{get{if(builtIn==null){using(var s=typeof(ProfileCatalog).Assembly.GetManifestResourceStream("profiles.json"))using(var r=new StreamReader(s??throw new FileNotFoundException("Embedded resource missing: profiles.json")))builtIn=Parse(r.ReadToEnd());}return builtIn;}}
@@ -62,7 +67,12 @@ namespace AgDns {
    }
    if(string.IsNullOrWhiteSpace(Default)||Find(Default)==null)throw new FormatException("Catalog default profile is missing or unknown");
    foreach(var p in Pending??new PendingProfile[0])if(string.IsNullOrWhiteSpace(p.Id)||string.IsNullOrWhiteSpace(p.Reason))throw new FormatException("Pending entry needs id and reason");
+   foreach(var r in Retired??new RetiredProfile[0]) {
+    if(string.IsNullOrWhiteSpace(r.Id)||string.IsNullOrWhiteSpace(r.Reason))throw new FormatException("Retired entry needs id and reason");
+    foreach(string n in new[]{r.Id}.Concat(r.Aliases??new string[0]).Concat(string.IsNullOrEmpty(r.Slot)?new string[0]:new[]{r.Slot}))if(!names.Add(n))throw new FormatException("Retired name is still in use: "+n);
+   }
   }
+  public RetiredProfile FindRetired(string name)=>(Retired??new RetiredProfile[0]).FirstOrDefault(r=>string.Equals(r.Id,name,StringComparison.OrdinalIgnoreCase)||string.Equals(r.Slot,name,StringComparison.OrdinalIgnoreCase)||(r.Aliases??new string[0]).Any(a=>string.Equals(a,name,StringComparison.OrdinalIgnoreCase)));
   public ProfileSpec Find(string name)=>Profiles.FirstOrDefault(p=>string.Equals(p.Id,name,StringComparison.OrdinalIgnoreCase)||string.Equals(p.Slot,name,StringComparison.OrdinalIgnoreCase)||(p.Aliases??new string[0]).Any(a=>string.Equals(a,name,StringComparison.OrdinalIgnoreCase)));
  }
 }

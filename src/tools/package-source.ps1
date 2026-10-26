@@ -1,28 +1,24 @@
-param([string]$OutputPath='')
+﻿param([string]$OutputPath='')
 $ErrorActionPreference='Stop'
 $src=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repo=(Resolve-Path (Join-Path $src '..')).Path
 if(-not $OutputPath){$OutputPath=Join-Path $repo 'source code.zip'}
 $OutputPath=[IO.Path]::GetFullPath($OutputPath)
 
-$files=@(Get-Item -LiteralPath (Join-Path $repo 'README.md'),(Join-Path $repo '.gitignore'))
-foreach($name in 'LICENSE','.gitattributes','global.json','SECURITY.md','CHANGELOG.md','CONTRIBUTING.md'){
- $path=Join-Path $repo $name
- if(Test-Path -LiteralPath $path){$files+=Get-Item -LiteralPath $path}
-}
-foreach($folder in 'docs','assets\screenshots','.github'){
- $path=Join-Path $repo $folder
- if(Test-Path -LiteralPath $path){
-  $files+=Get-ChildItem -LiteralPath $path -Recurse -File -Force | Where-Object{$_.Extension -in '.md','.png','.yml','.yaml'}
- }
-}
+$rootNames=@('README.md','CHANGELOG.md','LICENSE','NOTICE','SECURITY.md','CONTRIBUTING.md','global.json','.gitignore','.gitattributes','NuGet.Config','nuget.config','Directory.Build.props','Directory.Build.targets','Directory.Packages.props')
+$files=@(Get-ChildItem -LiteralPath $repo -File -Force | Where-Object { $_.Name -in $rootNames })
+$files+=Get-ChildItem -LiteralPath $src -File | Where-Object {$_.Extension -in '.md','.json'}
+# Sources include their actual resources, documentation and attribution. Never include
+# build outputs, local state, signing keys or historical executables.
 foreach($folder in 'app','tests','tools'){
  $files+=Get-ChildItem -LiteralPath (Join-Path $src $folder) -Recurse -File -Force | Where-Object{
-  $_.Extension -in '.cs','.csproj','.ps1','.psm1','.psd1','.py','.json','.ico','.manifest' -and
-  $_.FullName -notmatch '[\\/](bin|obj|\.vs|__pycache__)[\\/]'
+  $_.FullName -notmatch '[\\/](bin|obj|\.work|\.vs|__pycache__)[\\/]' -and $_.Extension -notin '.pyc','.pdb','.log'
  }
 }
+$files+=Get-ChildItem -LiteralPath (Join-Path $repo 'docs') -Recurse -File -Force | Where-Object {$_.FullName -notmatch '[\\/](history|\.work|bin|obj)[\\/]'}
+if(Test-Path -LiteralPath (Join-Path $repo '.github')){$files+=Get-ChildItem -LiteralPath (Join-Path $repo '.github') -Recurse -File -Force}
 $files=@($files | Sort-Object FullName -Unique)
+if(@($files | Where-Object {$_.Extension -in '.pfx','.p12','.key','.pem','.exe','.dll','.zip' -or $_.Name -like '.env*'}).Count){throw 'Unexpected binary or secret-bearing file in source selection; inspect before packaging'}
 if(@($files | Where-Object{$_.FullName -eq $OutputPath}).Count){throw 'Output path overlaps a source file'}
 
 Add-Type -AssemblyName System.IO.Compression

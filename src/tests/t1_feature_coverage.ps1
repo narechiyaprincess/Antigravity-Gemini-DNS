@@ -37,7 +37,7 @@ $baselineMissing = @('Engine.ps1','Integration.ps1','EmergencyRestore.ps1' | Whe
 Assert-Condition ($baselineMissing.Count -eq 0) 'T1_F01_02' 'Historical script fixtures exist' 'F01'
 
 # T1_F01_03: Csproj embeds the companion scripts (single-exe contract; nothing is copied next to the exe)
-$csprojContent = Get-Content (Join-Path $sourceRoot 'AntigravityDnsUnlocker.csproj') -Raw
+$csprojContent = Get-Content (Join-Path $sourceRoot 'AntigravityGeminiDns.csproj') -Raw
 $copiesScripts = ($csprojContent -match 'EmbeddedResource Include="Engine\.ps1"') -and
                  ($csprojContent -match 'EmbeddedResource Include="Integration\.ps1"') -and
                  ($csprojContent -match 'EmbeddedResource Include="EmergencyRestore\.ps1"') -and
@@ -83,7 +83,13 @@ $splitSuccess = ($testSplit.Count -eq 3 -and $testSplit[0] -eq '1.1.1.1' -and $t
 Assert-Condition $splitSuccess 'T1_F02_04' 'Split-Servers handles comma, semicolon, and whitespace delimiters' 'F02'
 
 # T1_F02_05: Parameter block declares ValidateSet for Action
-$hasValidateSet = ($engineRaw -match "\[ValidateSet\('status','diagnose','enable','restore'\)\]")
+$actionTokens = $null; $actionErrors = $null
+$actionAst = [System.Management.Automation.Language.Parser]::ParseInput($engineRaw, [ref]$actionTokens, [ref]$actionErrors)
+$actionParameter = @($actionAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Action' })[0]
+$actionValidation = @($actionParameter.Attributes | Where-Object { $_.TypeName.FullName -eq 'ValidateSet' })
+$allowedActions = @($actionValidation | ForEach-Object { $_.PositionalArguments | ForEach-Object { $_.Value } })
+$expectedActions = @('status','diagnose','prepare','enable','restore','lease-acquire','lease-release','lease-recover','lease-status')
+$hasValidateSet = ($actionErrors.Count -eq 0 -and $actionValidation.Count -eq 1 -and $allowedActions.Count -eq $expectedActions.Count -and (($allowedActions | Sort-Object) -join ',') -ceq (($expectedActions | Sort-Object) -join ','))
 Assert-Condition $hasValidateSet 'T1_F02_05' 'Engine.ps1 declares strict ValidateSet for Action parameter' 'F02'
 
 # ==============================================================================
@@ -99,7 +105,7 @@ $parsesCliTemplate = ($progContent -match 'args\.Contains\("--template"\)' -or $
 Assert-Condition $parsesCliTemplate 'T1_F03_02' 'Program.cs parses --template argument from CLI' 'F03' -DefectId 'F03' -FailureMessage 'Program.cs checks only --network and ignores --template'
 
 # T1_F03_03: CheckCandidate passes template to Wire.Doh
-$passesTemplateToDoh = ($progContent -match 'Wire\.Doh\(.*,\s*template\)' -or $progContent -match 'Wire\.Doh\(h,\s*type,\s*ip,\s*\d+,\s*template\)')
+$passesTemplateToDoh = ($progContent -match 'Template=template\?\?DefaultTemplate' -and $progContent -match 'live\.QueryAsync\(spec,ip,h,type,6000,ct\)' -and (Get-Content -LiteralPath (Join-Path $sourceRoot 'Benchmark.cs') -Raw) -match 'Wire\.DohAsync\(Client\(p,server\),p\.Template,host,type,timeoutMs,ct\)')
 Assert-Condition $passesTemplateToDoh 'T1_F03_03' 'CheckCandidate passes configured template to Wire.Doh' 'F03' -DefectId 'F03' -FailureMessage 'Program.cs calls Wire.Doh(h,type,ip,6) without passing template'
 
 # T1_F03_04: CLI Interface Contract defines Candidate response schema
@@ -310,15 +316,16 @@ Assert-Condition $readmeDocumentsWorkPortable 'T1_F09_02' 'README.md documents t
 $buildMentionsWorkPortable = ($buildContent -match '\.work\\build')
 Assert-Condition $buildMentionsWorkPortable 'T1_F09_03' 'Build.ps1 default path specifies .work\build' 'F09'
 
-# T1_F09_04: README.md names the runnable release file (release/AntigravityDNS.exe)
-$readmeHasBaselineSection = ($readmeContent -match 'release/AntigravityDNS\.exe')
-Assert-Condition $readmeHasBaselineSection 'T1_F09_04' 'README.md names the runnable release file release/AntigravityDNS.exe' 'F09'
+# T1_F09_04: README.md documents the supported untrimmed build recipe and the build output name
+$readmeHasBaselineSection = ($readmeContent -match 'AntigravityGeminiDns\.exe' -and $readmeContent -match 'PublishTrimmed=false')
+Assert-Condition $readmeHasBaselineSection 'T1_F09_04' 'README.md names the executable and the supported untrimmed build recipe' 'F09'
 
-# T1_F09_05: the launcher shortcut at the project root opens the current build (release\AntigravityDNS.exe; src\tools\package-release.ps1 keeps it so)
-$launcher = @(Get-ChildItem -LiteralPath $repoRoot -Filter '*Antigravity DNS.lnk') | Select-Object -First 1
+# T1_F09_05: a local launcher shortcut at the project root is optional (it is not part of the repository); when present it must open an existing exe with its own folder as working directory
+$launcher = @(Get-ChildItem -LiteralPath $repoRoot -Filter '*.lnk') | Select-Object -First 1
 $launcherTarget = if ($launcher) { (New-Object -ComObject WScript.Shell).CreateShortcut($launcher.FullName).TargetPath } else { '' }
-$shortcutExists = ($launcherTarget -like ('*' + [IO.Path]::DirectorySeparatorChar + 'release' + [IO.Path]::DirectorySeparatorChar + 'AntigravityDNS.exe')) -and (Test-Path -LiteralPath $launcherTarget)
-Assert-Condition $shortcutExists 'T1_F09_05' 'Launcher shortcut (*Antigravity DNS.lnk) exists at the project root and opens release\AntigravityDNS.exe' 'F09' -FailureMessage ('target: ' + $launcherTarget)
+$shortcutWorking = if ($launcher) { (New-Object -ComObject WScript.Shell).CreateShortcut($launcher.FullName).WorkingDirectory } else { '' }
+$shortcutExists = (-not $launcher) -or ((Test-Path -LiteralPath $launcherTarget) -and ($shortcutWorking -eq [IO.Path]::GetDirectoryName($launcherTarget)) -and ($launcherTarget -like '*AntigravityGeminiDns.exe'))
+Assert-Condition $shortcutExists 'T1_F09_05' 'Optional root shortcut opens an existing AntigravityGeminiDns.exe with an explicit working directory' 'F09' -FailureMessage ('target: ' + $launcherTarget)
 
 # ==============================================================================
 # P1: Provider 1 Contract - dns.malw.link (5 tests)
@@ -424,7 +431,7 @@ Assert-Condition $p3Restored 'T1_P3_05' 'P3 teardown verifies zero residual rule
 # ==============================================================================
 # S6: Optional Windows Logon Autostart Contract (5 tests)
 # ==============================================================================
-$workPortableExe = Join-Path $projectRoot '.work\build\AntigravityDnsUnlocker.exe'
+$workPortableExe = Join-Path $projectRoot '.work\build\AntigravityGeminiDns.exe'
 
 # T1_S6_01: Autostart default state is disabled (default-off invariant)
 $asInit = Get-AutostartStatus
@@ -462,7 +469,7 @@ if (Test-Path $workPortableExe) {
         Remove-Item -LiteralPath 'HKCU:\Software\AgDnsTest' -Recurse -Force -ErrorAction SilentlyContinue
     }
 } else {
-    $cliLifecycleValid = $true
+    $cliLifecycleValid = $false # Required CLI executable is missing: this assertion must fail.
 }
 Assert-Condition $cliLifecycleValid 'T1_S6_05' 'CLI --autostart-enable and --autostart-disable manage autostart lifecycle cleanly' 'S6'
 

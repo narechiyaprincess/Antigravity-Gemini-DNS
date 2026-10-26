@@ -21,12 +21,12 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'
 
 Write-Host "--- Executing Tier 6: Release 1.4 Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 90, [hashtable]$Env = @{}) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
@@ -41,9 +41,10 @@ function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 90, [hashtable]$Env
     $p.WaitForExit()
     [pscustomobject]@{ Exit = $p.ExitCode; Out = $so.Result; Err = $se.Result }
 }
-function Invoke-Ps([string]$Command, [int]$TimeoutSec = 60, [string]$FileArgs = '') {
+function Invoke-Ps([string]$Command, [int]$TimeoutSec = 60, [string]$FileArgs = '', [hashtable]$Env = @{}) {
     $psi = New-Object Diagnostics.ProcessStartInfo (Join-Path $PSHOME 'powershell.exe')
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    foreach ($k in $Env.Keys) { $psi.EnvironmentVariables[$k] = [string]$Env[$k] }
     # -FileArgs: run a script file the way the exe does (-File), where $Command is the script path.
     $psi.Arguments = $(if ($FileArgs -ne '') { '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $Command + '" ' + $FileArgs } else { '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' + ($Command -replace '"', '\"') + '"' })
     $p = [Diagnostics.Process]::Start($psi)
@@ -64,7 +65,7 @@ $exempt = @('OfflineTests.cs', 'Engine.Tests.ps1')
 $dupes = @()
 $defaultProfile = $cat.profiles | Where-Object { $_.id -eq $cat.default }
 $needles = @($cat.targets) + @($defaultProfile.servers) + @($defaultProfile.template, $defaultProfile.id)
-foreach ($f in Get-ChildItem -LiteralPath $sourceRoot -File | Where-Object { $_.Extension -in '.cs', '.ps1', '.csproj' -and $_.Name -notin $exempt }) {
+foreach ($f in Get-ChildItem -LiteralPath $sourceRoot -File | Where-Object { $_.Extension -in '.cs', '.ps1', '.csproj' -and $_.Name -notin $exempt -and $_.Name -notlike 'OfflineTests*.cs' }) {
     $text = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8
     foreach ($n in $needles) { if ($text.Contains([string]$n)) { $dupes += "$($f.Name): $n" } }
 }
@@ -86,7 +87,7 @@ Assert-Condition ($missing.Exit -eq 1 -and $missing.Out -match 'ENGINE_TARGETS_M
 
 if ($haveExe) {
     $ver = Invoke-Exe @('--version')
-    $csprojVersion = ([regex]::Match((Get-Content -LiteralPath (Join-Path $sourceRoot 'AntigravityDnsUnlocker.csproj') -Raw), '<Version>([^<]+)</Version>')).Groups[1].Value
+    $csprojVersion = ([regex]::Match((Get-Content -LiteralPath (Join-Path $sourceRoot 'AntigravityGeminiDns.csproj') -Raw), '<Version>([^<]+)</Version>')).Groups[1].Value
     Assert-Condition ($ver.Exit -eq 0 -and $ver.Out.Trim() -eq $csprojVersion -and $csprojVersion) 'T6_D06' "--version equals <Version> in the .csproj ($csprojVersion)" 'R14-6'
 
     $exportDir = Join-Path $ScratchPath 'exported14'
@@ -103,7 +104,7 @@ if ($haveExe) {
 }
 
 # ==============================================================================
-# R14-4: honest choice of the best profile (reach >= 75 %, experimental flag), through --benchmark-synthetic
+# R14-4: choice of the best profile (reach >= 75 %, experimental flag), through --benchmark-synthetic
 # ==============================================================================
 $D1 = 'daily-cloudcode-pa.googleapis.com'; $D2 = 'generativelanguage.googleapis.com'
 function New-A([string]$name, [string[]]$ips) { [Convert]::ToBase64String((New-SyntheticDnsResponse -QuestionDomain $name -QuestionType 1 -Id 1234 -AnswerRecords @($ips | ForEach-Object { New-ARecord $name $_ }))) }
@@ -134,10 +135,10 @@ if ($haveExe) {
     $runB = Invoke-Scenario 'B' @($halfdeadP, $expSlowP)
     Assert-Condition ($runB -and -not $runB.Winner -and @($runB.Results | Where-Object { $_.Best }).Count -eq 0) 'T6_B05' 'With only weak or experimental-not-Good profiles there is no recommendation' 'R14-4'
     $runC = Invoke-Scenario 'C' @($healthyP, $expGoodP)
-    Assert-Condition ($runC -and $runC.Winner -eq 'expgood') 'T6_B06' 'An experimental profile that earns the Good verdict can win' 'R14-4'
+    Assert-Condition ($runC -and $runC.Winner -eq 'healthy' -and @($runC.Results | Where-Object { $_.Id -eq 'expgood' -and $_.Recommendable }).Count -eq 1) 'T6_B06' 'An experimental profile that earns the Good verdict is recommendable but does not displace a Good confirmed one' 'R14-4'
     $pl = Invoke-Exe @('--profiles-list'); $plj = $null; try { $plj = $pl.Out | ConvertFrom-Json } catch {}
     $expSlots = @($plj.Profiles | Where-Object { $_.Experimental } | ForEach-Object { $_.Slot } | Sort-Object)
-    Assert-Condition (($expSlots -join ',') -eq 'P2,P5') 'T6_B07' 'The catalog flags exactly P2 and P5 as experimental' 'R14-4'
+    Assert-Condition (($expSlots -join ',') -eq 'P4,P7,P8') 'T6_B07' 'The catalog flags exactly P4, P7 and P8 as experimental' 'R14-4'
 }
 
 # ==============================================================================
@@ -214,10 +215,10 @@ Assert-Condition ($posNet -gt 0 -and $posNet -lt $posConf -and $posConf -lt $pos
 # ==============================================================================
 $byIdCat = @{}; foreach ($p in $cat.profiles) { $byIdCat[$p.id] = $p }
 $p3 = $byIdCat['dns.comss.one']
-Assert-Condition ((@($p3.servers) -join ',') -eq '83.220.169.155,195.133.25.16,212.109.195.93' -and $p3.bootstrap.date -eq '2026-10-12' -and (@($p3.servers | Where-Object { $_ -notin @($p3.bootstrap.pinned) }).Count -eq 0) -and $p3.bootstrap.tls) 'T6_A01' 'P3 pins are the three addresses that passed bootstrap on 2026-10-12, with provenance recorded' 'R14-2'
+Assert-Condition ((@($p3.servers) -join ',') -eq '195.133.25.16,212.109.195.93,94.250.253.55,185.146.157.78' -and $p3.bootstrap.date -eq '2026-10-26' -and (@($p3.servers | Where-Object { $_ -notin @($p3.bootstrap.pinned) }).Count -eq 0) -and $p3.bootstrap.tls) 'T6_A01' 'P3 pins are the four addresses that passed bootstrap on 2026-10-26, with provenance recorded' 'R14-2'
 Assert-Condition (($cat.pending | Where-Object { $_.id -eq 'dns.astracat.ru' }) -and -not $byIdCat.ContainsKey('dns.astracat.ru')) 'T6_A02' 'Astracat stays pending (not shipped as a pin)' 'R14-2'
 $expIds = @($cat.profiles | Where-Object { $_.PSObject.Properties['experimental'] -and $_.experimental } | ForEach-Object { $_.id } | Sort-Object)
-Assert-Condition (($expIds -join ',') -eq 'dns.dns-ai.ru,xbox-dns.ru') 'T6_A03' 'P2 and P5 are experimental in the catalog; no other profile is' 'R14-2'
+Assert-Condition (($expIds -join ',') -eq 'dns.zapret.moe,eu.geohide.ru,geohide.ru') 'T6_A03' 'The degraded geohide.ru and the new zapret/GeoHide EU profiles are experimental; no other profile is' 'R14-2'
 
 $nameOnly = Invoke-Ps ". '$sourceRoot\Engine.ps1' -LibraryOnly -Template 'https://custom.example.test/dns-query'; 'servers=' + @(`$script:Servers).Count; try { Get-Network } catch { `$_.Exception.Message }"
 Assert-Condition ($nameOnly.Out -match 'servers=0' -and $nameOnly.Out -match 'NO_ADDRESSES_FOR_PROFILE') 'T6_A04' 'A name-only profile does not borrow the default profile''s IPs; the engine refuses to probe without addresses' 'R14-2' -FailureMessage ($nameOnly.Out + $nameOnly.Err)
@@ -273,7 +274,7 @@ Assert-Condition ($read130.Phase -eq 'Active' -and (Get-Status).State -eq 'DNS a
 Restore-State (Read-State) | Out-Null
 Assert-Condition ((Read-State).Phase -eq 'Restored' -and $script:MockRules.Count -eq 0 -and $script:MockDoh.Count -eq 0) 'T6_R06' 'A 1.3.0-style journal is restored by this engine' 'R14-6'
 
-# CIM hang: the REAL engine run by the REAL exe resolves Get-DnsClient* to the fake module (AGDNS_TEST_PSMODULEPATH, honoured by a non-elevated run only), which sleeps for minutes.
+# CIM hang: the real engine run by the real exe resolves Get-DnsClient* to the fake module (AGDNS_TEST_PSMODULEPATH, honoured by a non-elevated run only), which sleeps for minutes.
 if ($haveExe) {
     $fakeDir = Join-Path $PSScriptRoot 'helpers\FakeCim'
     $fakeLog = Join-Path $ScratchPath 'fake_cim_mutations.log'
@@ -291,14 +292,19 @@ if ($haveExe) {
     $aj = $null; try { $aj = $alive.Out | ConvertFrom-Json } catch {}
     Assert-Condition ($alive.Exit -eq 0 -and $aj -and $aj.Allowed -eq $true -and -not (Test-Path -LiteralPath $fakeLog)) 'T6_R10' 'Responsive CIM: the pre-check passes (the same stub, not hanging)' 'R14-1' -FailureMessage ($alive.Out + $alive.Err)
 
-    # Module hijack: a fake DnsClient module in the user's own PSModulePath (what any user-level program can plant) is NOT loaded by the engine, so even a hanging fake changes nothing.
-    # (The same fake as above, but through the real PSModulePath instead of the test seam.)
+    # Resolve the cmdlets without invoking CIM: host WMI availability is independent of module-search isolation.
+    # The negative control proves that the inherited path really selects the planted module without the engine's guard.
     $envHijack = @{ PSModulePath = ($fakeDir + ';' + $env:PSModulePath); AGDNS_FAKE_CIM = 'hang'; AGDNS_FAKE_CIM_LOG = $fakeLog }
-    $swH = [Diagnostics.Stopwatch]::StartNew()
-    $hij = Invoke-Exe @('--preflight') 90 $envHijack
-    $swH.Stop()
-    $hjj = $null; try { $hjj = $hij.Out | ConvertFrom-Json } catch {}
-    Assert-Condition ($hij.Exit -eq 0 -and $hjj -and $hjj.Allowed -eq $true -and $swH.Elapsed.TotalSeconds -lt 18 -and -not (Test-Path -LiteralPath $fakeLog)) 'T6_M01' 'A module planted in the user''s PSModulePath is ignored by the engine (the real system cmdlets answer; the fake never runs)' 'R-AUDIT' -FailureMessage ($hij.Out + $hij.Err)
+    $resolve = '(Get-Command Get-DnsClientNrptRule -ErrorAction Stop).Module.Path'
+    $control = Invoke-Ps -Command $resolve -Env $envHijack
+    $fakeModule = Join-Path $fakeDir 'DnsClient\DnsClient.psm1'
+    Assert-Condition ($control.Exit -eq 0 -and $control.Out.Trim() -ieq $fakeModule) 'T6_M00' 'Negative control: an inherited user module path selects the planted DnsClient module' 'R-AUDIT' -FailureMessage ($control.Out + $control.Err)
+    $importEngine = ". '" + (Join-Path $sourceRoot 'Engine.ps1').Replace("'", "''") + "' -LibraryOnly; "
+    $hij = Invoke-Ps -Command ($importEngine + $resolve) -Env $envHijack
+    $systemModule = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\Modules\DnsClient\DnsClient.psm1'
+    $resolvedModule = $hij.Out.Trim()
+    $systemDnsRoot = Split-Path -Parent $systemModule
+    Assert-Condition ($hij.Exit -eq 0 -and $resolvedModule.StartsWith($systemDnsRoot+'\',[StringComparison]::OrdinalIgnoreCase) -and -not (Test-Path -LiteralPath $fakeLog)) 'T6_M01' 'Engine resolves DnsClient only from the system module directory, independently of WMI health' 'R-AUDIT' -FailureMessage ($hij.Out + $hij.Err)
 
     # RESTORE_UNCONFIRMED instruction from a journal file (read-only CLI, no registry access)
     $jf = Join-Path $ScratchPath 'journal_restoring.json'
@@ -350,15 +356,15 @@ if ($haveExe) {
 if ($haveExe) {
     $distDir = Join-Path $ScratchPath 'dist'
     $pk = & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $sourceRoot 'Package.ps1') -ExePath $sourceExe -OutputDirectory $distDir 2>&1 | Out-String
-    $expectedZip = Join-Path $distDir "AntigravityDnsUnlocker-$csprojVersion-win-x64.zip"
-    Assert-Condition ((Test-Path -LiteralPath $expectedZip) -and (Test-Path -LiteralPath (Join-Path $distDir 'SHA256SUMS.txt'))) 'T6_P01' "Package.ps1 produces AntigravityDnsUnlocker-$csprojVersion-win-x64.zip and SHA256SUMS.txt" 'R14-6' -FailureMessage $pk
+    $expectedZip = Join-Path $distDir "AntigravityGeminiDns-$csprojVersion-win-x64.zip"
+    Assert-Condition ((Test-Path -LiteralPath $expectedZip) -and (Test-Path -LiteralPath (Join-Path $distDir 'SHA256SUMS.txt'))) 'T6_P01' "Package.ps1 produces AntigravityGeminiDns-$csprojVersion-win-x64.zip and SHA256SUMS.txt" 'R14-6' -FailureMessage $pk
     if (Test-Path -LiteralPath $expectedZip) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zf = [IO.Compression.ZipFile]::OpenRead($expectedZip)
         try { $entries = @($zf.Entries | ForEach-Object { $_.FullName }) } finally { $zf.Dispose() }
         $sumsText = Get-Content -LiteralPath (Join-Path $distDir 'SHA256SUMS.txt') -Raw
         $zipHash2 = (Get-FileHash -LiteralPath $expectedZip -Algorithm SHA256).Hash.ToLowerInvariant()
-        Assert-Condition (($entries -join ',') -eq 'AntigravityDnsUnlocker.exe' -and $sumsText.Contains($zipHash2 + '  ' + (Split-Path $expectedZip -Leaf))) 'T6_P02' 'The archive holds only the exe and SHA256SUMS.txt lists the archive hash' 'R14-6'
+        Assert-Condition (($entries -join ',') -eq 'AntigravityGeminiDns.exe' -and $sumsText.ToLowerInvariant().Contains($zipHash2 + '  ' + (Split-Path $expectedZip -Leaf).ToLowerInvariant())) 'T6_P02' 'The archive holds only the exe and SHA256SUMS.txt lists the independently computed archive hash (hex case-insensitive)' 'R14-6'
     }
 }
 

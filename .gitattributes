@@ -15,3 +15,6 @@
 *.psd1 text eol=crlf
 *.png binary
 *.ico binary
+
+# Preserve the approved source export byte-for-byte, including embedded resources.
+/src/** -text whitespace=cr-at-eol

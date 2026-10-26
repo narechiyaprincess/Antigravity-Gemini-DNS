@@ -444,7 +444,7 @@ $script:MockRules.Add([PSCustomObject]@{
 })
 Assert-ThrowsException {
     Enable-State $true $false
-} 'NRPT_CONFLICT' 'T2_P2_B05' 'Foreign conflict on P2 target namespace fails closed with NRPT_CONFLICT' 'P2'
+} 'NRPT_OR_HOSTS_CONFLICT' 'T2_P2_B05' 'Foreign conflict on P2 target namespace fails closed with NRPT_OR_HOSTS_CONFLICT' 'P2'
 
 # ==============================================================================
 # P3: Provider 3 Boundaries (5 tests)

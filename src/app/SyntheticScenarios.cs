@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // Offline black-box hooks for the E2E tier (tests\t8_release_1_6.ps1): a scenario file describes what the "network" answers, the real production logic runs on it.
  // Nothing here opens a socket or touches the system; like --benchmark-synthetic these flags exist for tests only.
  public static class SyntheticScenarios {
@@ -23,7 +23,7 @@ namespace AgDns {
   }
   static bool Is(JsonElement e,string name,string word)=>e.TryGetProperty(name,out var a)&&a.ValueKind==JsonValueKind.String&&a.GetString()==word;
 
-  // --bootstrap-synthetic: Bootstrap + AddressResolver on scripted resolvers.
+  // bootstrap-synthetic: Bootstrap + AddressResolver on scripted resolvers.
   // {template,budgetMs,discoveryMs,system:[ips]|"fail"|"hang",cross:[{via,server,code,addresses}]|"hang",tlsOk:[ips],dohOk:[ips],dohHang:bool}
   public static object BootstrapScenario(string json) {
    using(var doc=JsonDocument.Parse(json)) {
@@ -55,7 +55,7 @@ namespace AgDns {
    public Task<string[]> SystemAnswers(string host,CancellationToken ct){SystemCalls++;return Task.FromResult(new[]{ResolverMismatch?"192.0.2.55":"198.51.100.1"});}
   }
 
-  // --health-synthetic: HealthMonitor / HealthScheduler on a scripted probe.
+  // health-synthetic: HealthMonitor / HealthScheduler on a scripted probe.
   // {journal:<object>|"none", provider:"ok"|"down"|"throws", steps:["light"|"full"|{kind,provider}], schedule:{minutes,stepSeconds}}
   public static object Health(string json) {
    using(var doc=JsonDocument.Parse(json)) {
@@ -81,19 +81,19 @@ namespace AgDns {
    }
   }
 
-  // --alternative-synthetic: ProviderSwitch.FindAsync on a scripted benchmark (the scenario format of --benchmark-synthetic) plus {"current":"<profile id>"}.
+  // alternative-synthetic: ProviderSwitch.FindAsync on a scripted benchmark (the scenario format of --benchmark-synthetic) plus {"current":"<profile id>"}.
   public static object Alternative(string json) {
    string current,trust;using(var doc=JsonDocument.Parse(json)){current=Str(doc.RootElement,"current","");trust=Str(doc.RootElement,"trust",null);}
    var t=SyntheticTransport.Load(json);
    var outcome=Task.Run(()=>ProviderSwitch.FindAsync(t.Profiles,current,t,t.Options,default)).GetAwaiter().GetResult();
-   // "trust": "accept"|"decline" also plays the person's answer to the trust dialog through ProviderSwitch.ApplyAsync and records what was called, in order.
+   // "trust": "accept"|"decline" also plays the user's answer to the trust dialog through ProviderSwitch.ApplyAsync and records what was called, in order.
    var calls=new List<string>();bool? applied=null;
    if(trust!=null&&outcome.Offer!=null)
     applied=Task.Run(()=>ProviderSwitch.ApplyAsync(outcome.Offer,id=>{calls.Add("trust:"+id);return trust=="accept";},id=>{calls.Add("enable:"+id);return Task.CompletedTask;})).GetAwaiter().GetResult();
    return new{Kind=outcome.Kind.ToString(),ProfileId=outcome.Offer?.ProfileId,From=outcome.Offer?.FromId,outcome.Checked,Requests=t.Requests,Applied=applied,Calls=calls};
   }
 
-  // --connect-synthetic: AddressResolver (pins -> saved -> bootstrap). {template,nowUtc,pins,alive,saved:{servers,utc},bootstrap:"fail"|[ips]}
+  // connect-synthetic: AddressResolver (pins -> saved -> bootstrap). {template,nowUtc,pins,alive,saved:{servers,utc},bootstrap:"fail"|[ips]}
   public static object Connect(string json) {
    using(var doc=JsonDocument.Parse(json)) {
     var r=doc.RootElement;string template=Str(r,"template","https://dns.example.test/dns-query");DateTime now=Utc(r,"nowUtc");

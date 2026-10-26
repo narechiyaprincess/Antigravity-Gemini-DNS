@@ -24,12 +24,12 @@ $script:RunPath = 'HKCU:\Software\AgDnsTest\Run'
 
 Write-Host "--- Executing Tier 10: speed path Tests ---" -ForegroundColor Cyan
 
-$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityDNS.exe' }
+$sourceExe = if ($env:AGDNS_EXE) { $env:AGDNS_EXE } else { Join-Path $projectRoot '..\release\AntigravityGeminiDns.exe' }
 $haveExe = Test-Path -LiteralPath $sourceExe
 $clean = Join-Path $ScratchPath 'clean_exe'
 [IO.Directory]::CreateDirectory($clean) | Out-Null
 if ($haveExe) { Copy-Item -LiteralPath $sourceExe -Destination $clean }
-$exe = Join-Path $clean 'AntigravityDnsUnlocker.exe'
+$exe = Join-Path $clean (Split-Path -Leaf $sourceExe)
 function Invoke-Exe([string[]]$Arguments, [int]$TimeoutSec = 60) {
     $psi = New-Object Diagnostics.ProcessStartInfo $exe
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
@@ -69,7 +69,7 @@ $script:Exe = $stub
 $script:Targets = $core
 
 # ==============================================================================
-# S01-S04: one exe start answers the whole check; entries are used once; old exe -> single queries
+# S01-S04: one exe start answers the whole check; entries are used once; old exe: single queries
 # ==============================================================================
 $env:AGDNS_STUB_MODE = ''
 Clear-StubCalls; Reset-SystemAnswers
@@ -122,12 +122,16 @@ if ($haveExe) {
 }
 
 # ==============================================================================
-# S08: the window's waits overlap and a successful operation brings its own status (source contract)
+# S08: native preparation is revision-bound; the UI renders only current verified snapshots.
 # ==============================================================================
-$mf = Get-Src 'MainForm.cs'
-$iGuard = $mf.IndexOf('var guardTask=Recovery.CheckCimAsync(')
-$iPlan = $mf.IndexOf('planTask=Task.Run(()=>AddressResolver.ResolveLiveAsync(')
-$iWait = $mf.IndexOf('var guard=await guardTask;')
-$iElev = $mf.IndexOf('var result=await Program.Elevate(')
-Assert-Condition ($iGuard -gt 0 -and $iPlan -gt $iGuard -and $iWait -gt $iPlan -and $iElev -gt $iWait) 'T10_S08a' 'Connect: the WMI check and the address check start together, both finish before the UAC prompt' 'R-SPEED'
-Assert-Condition ($mf -match 'string embedded=StatusFromOperation\(action,result\.Code,result\.Output\);' -and $mf -match 'embedded!=null\?\(Code:0,Output:embedded\):await Program\.Engine\("status"') 'T10_S08b' 'After a successful operation the window uses the status the operation returned' 'R-SPEED'
+$assistedMain = Get-Src 'MainForm.Assisted.cs'
+$assistedNative = Get-Src 'AssistedNative.cs'
+$coordinator = Get-Src 'AssistedCoordinator.cs'
+$captureMatch=[regex]::Match($coordinator,'var before=(?:recoveryAdmission\?\?)?await backend\.Capture\(')
+$iCapture=if($captureMatch.Success){$captureMatch.Index}else{-1}
+$iPrepare=$coordinator.IndexOf('prepared=await backend.Prepare(')
+$iTrust=$coordinator.IndexOf('!await trust(prepared,token)')
+$iReady=$coordinator.IndexOf('var ready=await backend.Capture(')
+$iApply=$coordinator.IndexOf('started=true;var applied=await backend.Apply(')
+Assert-Condition ($iCapture -ge 0 -and $iPrepare -gt $iCapture -and $iTrust -gt $iPrepare -and $iReady -gt $iTrust -and $iApply -gt $iReady -and $assistedNative.Contains('AddressResolver.ResolveAsync(') -and $assistedNative.Contains('await task.WaitAsync(budget.Token)')) 'T10_S08a' 'Connect binds preparation and explicit trust to a fresh native revision before UAC; address resolution is bounded' 'R-SPEED'
+Assert-Condition ($assistedMain.Contains('bool verified=outcome.Outcome==AssistedOutcome.NativeVerified||outcome.Outcome==AssistedOutcome.DisabledVerified;') -and $assistedMain.Contains('if(verified&&assistedBackend.LastSnapshot!=null)') -and $assistedMain.Contains('JsonDocument.Parse(assistedBackend.LastSnapshot.Output)') -and $assistedNative.Contains('LastSnapshot=')) 'T10_S08b' 'The window renders the current verified native snapshot after successful operation' 'R-SPEED'

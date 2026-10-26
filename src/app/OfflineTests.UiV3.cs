@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  // UI tests: bridge card, scope selector, browser dialog and line icons.
  // The browser logic runs on invented registries and files (MemoryBrowserEnv); nothing here reads this computer's browsers.
  public static partial class OfflineTests {
@@ -45,7 +45,7 @@ namespace AgDns {
    Verdict("Chrome, no Local State file",chrome,new MemoryBrowserEnv(),BypassStatus.Unknown,"NO_PROFILE");
    e=new MemoryBrowserEnv().SetText(ChromeState(new MemoryBrowserEnv()),"{ broken");
    Verdict("Chrome, unreadable Local State",chrome,e,BypassStatus.Unknown,"NO_PROFILE");
-   // Chromium, policy (wins over the person's own setting; machine before user)
+   // Chromium, policy (wins over the user's own setting; machine before user)
    e=new MemoryBrowserEnv().SetReg(true,ChromePolicyKey,"DnsOverHttpsMode","secure").SetReg(true,ChromePolicyKey,"DnsOverHttpsTemplates","https://dns.example/dns-query");
    Verdict("Chrome, policy secure with a server",chrome,e,BypassStatus.Bypasses,"POLICY_ON",true);
    e=new MemoryBrowserEnv().SetReg(true,ChromePolicyKey,"DnsOverHttpsMode","off").SetText(ChromeState(new MemoryBrowserEnv()),"{\"dns_over_https\":{\"mode\":\"secure\",\"templates\":\"https://dns.example/dns-query\"}}");
@@ -137,9 +137,10 @@ namespace AgDns {
     form.Show();Application.DoEvents();bool g0=Program.Gemini,g1=Program.Google;
     try {
      form.SelectTab(2);Application.DoEvents();
-     Check(form.BrowserRowText=="Не выбран: нажмите, чтобы выбрать"&&!form.BrowserPanelVisible,"browser window: the settings row says no browser is chosen yet");
+     Check(form.BrowserRowText=="Не выбран"&&!form.BrowserPanelVisible,"browser window: the settings summary says no browser is chosen yet");
      form.ClickBrowserRowForTest();
-     Check(form.BrowserPanelVisible&&form.BrowserBackVisible&&!form.BrowserForScope&&form.BrowserBackText=="Назад","browser window: the settings row opens the same panel with «Назад» in its header (here it only closes: the choice is recorded as it is made)");
+     Check(!form.BrowserPanelVisible,"browser window: the read-only settings summary does not open a selector");form.ClickBrowserChangeForTest();
+     Check(form.BrowserPanelVisible&&form.BrowserBackVisible&&!form.BrowserForScope&&form.BrowserBackText=="Назад","browser window: explicit Change opens the picker with Back");
      Pump(form.BrowserWork);
      Check(form.BrowserNames.SequenceEqual(new[]{"Google Chrome","Microsoft Edge","Brave","Mozilla Firefox","Другой / не знаю"}),"browser window: the list shows the installed browsers and «Другой / не знаю» last");
      Check(!form.BrowserContinueEnabled&&form.BrowserHeadline.StartsWith("Выберите браузер")&&!form.BrowserOpenVisible,"browser window: nothing chosen -> a hint, nothing to open");
@@ -154,33 +155,33 @@ namespace AgDns {
      form.SelectBrowserForTest("other");Pump(form.BrowserWork);
      Check(form.BrowserTone==Theme.Muted&&!form.BrowserOpenVisible&&form.SettingsBrowser=="other","browser window: «Другой / не знаю» -> grey, nothing to open");
      form.SelectBrowserForTest("chrome");Pump(form.BrowserWork);
-     // the button starts exactly the browser's program with its settings address
+     // the button starts the browser's own program with its settings address
      BrowserInfo launched=null;form.BrowserElevated=()=>false;form.BrowserLauncher=b=>launched=b;form.OpenBrowserSettingsForTest();
      string copied=null;form.BrowserClipboard=u=>copied=u;form.OpenBrowserSettingsForTest();
      Check(launched!=null&&launched.Exe.EndsWith("chrome.exe")&&launched.SettingsUrl=="chrome://settings/security"&&copied=="chrome://settings/security","browser window: «Открыть настройку браузера» starts the browser's program with its settings address and keeps the address on the clipboard (some browsers ignore an internal address on the command line)");
      form.BrowserBackForTest();   // «Назад» closes the panel (here the choice was recorded as it was made)
-     Check(!form.BrowserPanelVisible&&form.BrowserRowText=="Google Chrome · проверить снова","browser window: the settings row shows «Google Chrome · проверить снова»");
+     Check(!form.BrowserPanelVisible&&form.BrowserRowText=="Google Chrome","browser window: the settings row shows saved Google Chrome without an implied recheck");
      // the question belongs to «+ Браузер»: continue applies the scope, Esc and changing the tab back out
      form.SelectTab(0);form.SetScopeForTest(MainForm.BridgeScope.Core);
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);
      Check(form.BrowserPanelVisible&&form.BrowserBackVisible&&form.BrowserForScope&&form.BrowserNames.Length==5,"browser window: «+ Браузер» opens the question with «Назад»");
      Check(form.BrowserContinueEnabled&&form.BrowserHeadline.StartsWith("Свой «Безопасный DNS»"),"browser window: the remembered browser is already chosen and checked again");
      form.KeyForTest(Keys.Escape);
-     Check(!form.BrowserPanelVisible&&form.ScopeIndex==0&&!Program.Google,"browser window: Esc backs out");
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.BrowserBackForTest();
-     Check(!form.BrowserPanelVisible&&form.ScopeIndex==0&&!Program.Google,"browser window: «Назад» in the header backs out of the question and puts the selector back");
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.SelectTab(1);
-     Check(!form.BrowserPanelVisible&&form.ScopeIndex==0&&!Program.Google,"browser window: changing the tab backs out too");
-     form.SelectTab(0);form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.BrowserContinueForTest();
-     Check(Program.Google&&form.ScopeIndex==2,"browser window: «Продолжить» applies the scope");
+     Check(!form.BrowserPanelVisible&&form.ScopeSelected==MainForm.BridgeScope.Core&&!Program.Google,"browser window: Esc backs out");
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.BrowserBackForTest();
+     Check(!form.BrowserPanelVisible&&form.ScopeSelected==MainForm.BridgeScope.Core&&!Program.Google,"browser window: «Назад» in the header backs out of the question and puts the selector back");
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.SelectTab(1);
+     Check(!form.BrowserPanelVisible&&form.ScopeSelected==MainForm.BridgeScope.Core&&!Program.Google,"browser window: changing the tab backs out too");
+     form.SelectTab(0);form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.BrowserContinueForTest();
+     Check(Program.Google&&form.ScopeSelected==MainForm.BridgeScope.All,"browser window: «Продолжить» applies the scope");
      // the question is only for «+ Браузер» when it is not already the scope
-     form.ClickScopeForTest(MainForm.BridgeScope.Gemini);
+     form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);
      Check(!form.BrowserPanelVisible&&Program.Gemini&&!Program.Google,"browser window: the other levels ask nothing");
-     // «+ Браузер»: a browser chosen in the question is kept only when the person continues
-     form.SelectTab(0);form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);
+     // «+ Браузер»: a browser chosen in the question is kept only when the user continues
+     form.SelectTab(0);form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);
      form.SelectBrowserForTest("edge");Pump(form.BrowserWork);string before=form.SettingsBrowser;form.BrowserCancelForTest();
      Check(before=="chrome"&&form.SettingsBrowser=="chrome"&&form.BrowserRowText.StartsWith("Google Chrome"),"browser window: backing out of the «+ Браузер» question does not change the remembered browser");
-     form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();
+     form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserContinueForTest();
      Check(form.SettingsBrowser=="edge"&&form.BrowserRowText.StartsWith("Microsoft Edge")&&Program.Google,"browser window: continuing with «+ Браузер» keeps the browser chosen in the question");
      form.SetScopeForTest(MainForm.BridgeScope.Core);
      // an elevated window starts no program from the registry; the address is still copied
@@ -192,11 +193,11 @@ namespace AgDns {
      // no question follows the panel: «Продолжить» applies the choice at once (with a working bridge: one reconnect), whether the bridge was there when the panel opened or came up meanwhile
      int hooked=0;form.MutateHook=(a,r)=>{hooked++;return System.Threading.Tasks.Task.CompletedTask;};
      form.JournalReader=()=>"{\"Phase\":\"Active\"}";
-     form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);
+     form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);
      form.PresentForTest("{\"State\":\"DNS active\",\"Active\":true,\"JournalPhase\":\"Active\",\"Servers\":[],\"Template\":\"x\"}");   // a bridge came up while the panel was open
      form.BrowserContinueForTest();
      Check(hooked==1,"browser window: if a bridge started while the panel was open, «Продолжить» goes straight to the reconnect (one operation, no question)");
-     hooked=0;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.Google);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);
+     hooked=0;form.SmokeState("active");form.SetScopeForTest(MainForm.BridgeScope.Core);form.ClickScopeForTest(MainForm.BridgeScope.All);Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);
      form.BrowserContinueForTest();
      Check(hooked==1,"browser window: with a working bridge «Продолжить» goes straight to the reconnect (one operation, no question)");
      form.MutateHook=null;form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);
@@ -212,7 +213,7 @@ namespace AgDns {
      foreach(var pair in new[]{("chrome.exe",ChromeExe),("msedge.exe",EdgeExe),("brave.exe",@"C:\b\brave.exe"),("browser.exe",@"C:\y\browser.exe"),("vivaldi.exe",@"C:\v\vivaldi.exe"),("opera.exe",@"C:\o\opera.exe"),("firefox.exe",FirefoxExe)})six.AddFile(pair.Item2).SetReg(true,@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\"+pair.Item1,null,pair.Item2);
      form.BrowserEnv=six;form.ShowBrowserPanelForTest(true);Pump(form.BrowserWork);
      var lay=form.BrowserLayout();
-     Check(form.BrowserNames.Length==6&&lay[5].Bottom<=lay[6].Top&&lay[6].Bottom<=lay[1].Top&&lay[1].Bottom<=lay[0].Top&&lay[0].Bottom<=lay[2].Top&&(!form.BrowserOpenVisible||lay[2].Bottom<=lay[7].Top)&&lay[7].Bottom<=lay[3].Top&&lay[0].Bottom<=lay[3].Top&&lay[3].Bottom<=form.BrowserPanelHeight&&lay[4].Bottom<=form.BrowserPanelHeight&&lay[3].Right<=lay[4].Left,"browser window: with many browsers (five shown + «Другой») «Назад», the question, the sentence, the list, the settings button, the note and the buttons keep apart");
+     Check(form.BrowserNames.Length==6&&lay[5].Bottom<=lay[6].Top&&lay[6].Bottom<=lay[1].Top&&lay[1].Bottom<=lay[0].Top&&lay[0].Bottom<=lay[2].Top&&(!form.BrowserOpenVisible||lay[2].Bottom<=lay[7].Top)&&lay[7].Bottom<=lay[3].Top&&lay[0].Bottom<=lay[3].Top&&lay[3].Bottom<=form.BrowserContentHeight&&lay[4].Bottom<=form.BrowserContentHeight&&form.BrowserFooterReachableForTest()&&lay[3].Right<=lay[4].Left,"browser window: with many browsers (five shown + «Другой») «Назад», the question, the sentence, the list, the settings button, the note and the buttons keep apart");
      form.BrowserCancelForTest();
     } finally { Program.Gemini=g0;Program.Google=g1;form.Close(); }
    }
@@ -247,7 +248,7 @@ namespace AgDns {
    } finally { L.En=en0; }
   }
 
-  // ---- the rest of the pass ----
+  // the rest of the pass
   [System.Runtime.InteropServices.DllImport("user32.dll")]static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr w,IntPtr l);
   static readonly Regex BannedWords=new Regex("Unlocker|проксир|прокси|[Pp]roxy",RegexOptions.CultureInvariant);
   static List<(int x,int y,int lum)> Ink(Bitmap b,Rectangle r,int min){
@@ -264,7 +265,7 @@ namespace AgDns {
      foreach(string mode in new[]{"idle","active","recovery","drift","switch"}){form.SmokeState(mode);for(int tab=0;tab<form.TabCount;tab++){form.SelectTab(tab);Application.DoEvents();if(form.HeaderControlsVisible)withHeader.Add(mode+"/tab"+tab);if(tab>0&&form.PageTopUnits(tab)>12)tops.Add("tab"+tab+"="+form.PageTopUnits(tab));}}
      Check(withHeader.Count==0,"ui v3: no page title and no small logo on any tab"+(withHeader.Count==0?"":" — "+string.Join(",",withHeader)));
      Check(tops.Count==0,"ui v3: the pages start right under the top edge, the old title bar's 50 units go to the content"+(tops.Count==0?"":" — "+string.Join(",",tops)));
-     Check(form.Text=="Antigravity DNS","ui v3: the window is called «Antigravity DNS»");
+     Check(form.Text=="Antigravity-Gemini DNS","ui v3: the window is called «Antigravity-Gemini DNS»");
     }
     // naming and wording in both languages, over every state, tab and panel
     foreach(bool en in new[]{false,true}){
@@ -279,7 +280,7 @@ namespace AgDns {
       Check(hits.Count==0,"ui v3: no «Unlocker» and no «прокси / proxy» in any text of the window ("+(en?"English":"Russian")+")"+(hits.Count==0?"":" — "+string.Join("; ",hits.Distinct().Take(8))));
       form.SelectTab(4);Application.DoEvents();
       var info=form.LabelsOf(4).Select(l=>l.Text).ToList();
-      Check(info.Contains("Antigravity DNS")&&info.Contains("by @narechiyaprincess")&&info.Contains(L.T("Версия")+" 1.0  ·  Windows x64")&&form.InfoRows[2].Subtitle==L.T("Автор Antigravity DNS")&&form.InfoRows[2].Text=="@your_sister_loves_me","ui v3: the info card says «Antigravity DNS · by @narechiyaprincess · Version 1.0 · Windows x64» and the contact line says only «Author of Antigravity DNS» ("+(en?"English":"Russian")+")");
+      Check(info.Contains("Antigravity-Gemini DNS")&&info.Contains("by @narechiyaprincess")&&info.Contains(L.T("Версия")+" "+AppInfo.Version+"  ·  Windows x64")&&form.InfoRows[2].Subtitle==L.T("Автор Antigravity-Gemini DNS")&&form.InfoRows[2].Text=="@your_sister_loves_me","ui v3: the info card says «Antigravity-Gemini DNS · by @narechiyaprincess · Version <AppInfo.Version> · Windows x64» and the contact line says only «Author of Antigravity-Gemini DNS» ("+(en?"English":"Russian")+")");
       Check(info.Contains(L.T("Российским аккаунтам для стабильной работы нужен ещё Antigravity Patcher."))&&form.InfoRows[0].Text==L.T("Скачать Antigravity Patcher")&&form.InfoRows[1].Text=="@avencoresyt"&&form.InfoRows[1].Subtitle==L.T("Автор патчера — если с ним что-то не так"),"ui v3: the patcher block keeps its sentence, its download row and its author row ("+(en?"English":"Russian")+")");
       // the description: how it really works (DNS only, encrypted to the provider, its intermediary server, the connection to Google stays direct and verified) in at most six 9 pt lines
       string d=form.InfoText;
@@ -291,37 +292,49 @@ namespace AgDns {
      }
     }
     L.En=false;
-    // the levels: the highlight always starts at the left edge and ends at the chosen level; a drawn plus; a tip for every level
+    // the services: three independent switches (any combination, at least one stays on), a tip for each
     using(var form=new MainForm(true)) {
-     form.Show();Application.DoEvents();bool g0=Program.Gemini,g1=Program.Google;
+     form.Show();Application.DoEvents();bool c0=Program.Core,g0=Program.Gemini,g1=Program.Google;
      try {
-      var seg=form.ScopeSegmented;float k=seg.DeviceDpi/96f,w=(seg.Width-6*k)/3;var bad=new List<string>();
-      Check(seg.Items.SequenceEqual(new[]{"Antigravity","+ Gemini Desktop","+ Браузер"})&&seg.Tips.Length==3&&seg.Tips.All(tp=>tp.Length>12&&tp.Length<110),"levels: «Antigravity · + Gemini Desktop · + Браузер», each with a one-sentence tip");
-      for(int i=0;i<3;i++){
-       form.SetScopeForTest((MainForm.BridgeScope)i);var pr=seg.PillRect(i);
-       if(Math.Abs(pr.Left-3*k)>1||Math.Abs(pr.Width-(i+1)*w)>1)bad.Add("pill "+i);
+      var seg=form.ScopePicker;float k=seg.DeviceDpi/96f;var bad=new List<string>();
+      Check(seg.Items.SequenceEqual(new[]{"Antigravity","Gemini","Браузер"})&&seg.Tips.Length==3&&seg.Tips.All(tp=>tp.Length>12&&tp.Length<110),"services: «Antigravity · Gemini · Браузер», each with a one-sentence tip");
+      foreach(var combo in new[]{MainForm.BridgeScope.Core,MainForm.BridgeScope.Gemini,MainForm.BridgeScope.Google,MainForm.BridgeScope.CoreGemini,MainForm.BridgeScope.CoreGoogle,MainForm.BridgeScope.GeminiGoogle,MainForm.BridgeScope.All}) {
+       form.SetScopeForTest(combo);
+       bool[] want={combo.HasFlag(MainForm.BridgeScope.Core),combo.HasFlag(MainForm.BridgeScope.Gemini),combo.HasFlag(MainForm.BridgeScope.Google)};
        using(var bmp=new Bitmap(seg.Width,seg.Height)){
         seg.DrawToBitmap(bmp,new Rectangle(0,0,seg.Width,seg.Height));
         for(int s=0;s<3;s++){
-         int top=Ink(bmp,new Rectangle((int)(3*k+s*w+4*k),(int)(4*k),(int)(w-8*k),seg.Height-(int)(8*k)),0).Max(p=>p.lum);
-         bool lit=top>=235;if(lit!=(s<=i))bad.Add("text "+s+" at level "+i+" lum "+top);
+         var cell=seg.CellRect(s);
+         int top=Ink(bmp,new Rectangle((int)(cell.X+cell.Width*.5f),(int)(4*k),(int)(cell.Width*.3f),seg.Height-(int)(8*k)),0).Max(p=>p.lum);
+         bool lit=top>=235;if(lit!=want[s]||seg.IsOn(s)!=want[s])bad.Add("cell "+s+" in "+combo+" lum "+top);
         }
        }
       }
-      Check(bad.Count==0,"levels: choosing a level lights it and every level before it (a pill from the left edge, white text on all lit segments)"+(bad.Count==0?"":" — "+string.Join("; ",bad)));
-      // the real paint path (the window's own double-buffered WM_PAINT, not a snapshot), repeated, with the mouse over each level in turn
-      for(int rep=0;rep<30;rep++){form.SetScopeForTest((MainForm.BridgeScope)(rep%3));seg.Invalidate();seg.Update();seg.Refresh();}
+      Check(bad.Count==0,"services: every one of the seven combinations is shown as chosen (white text on the cells that are on, muted on the others)"+(bad.Count==0?"":" — "+string.Join("; ",bad)));
+      // user clicks: each toggles only its own service, the last one cannot be switched off
+      form.SmokeState("idle");form.SetScopeForTest(MainForm.BridgeScope.Core);
+      form.ClickScopeForTest(MainForm.BridgeScope.CoreGemini);
+      Check(Program.Core&&Program.Gemini&&!Program.Google&&Program.Targets.Length==4,"services: Antigravity and Gemini together are four hosts");
+      form.SetScopeForTest(MainForm.BridgeScope.Gemini);
+      Check(!Program.Core&&Program.Gemini&&!Program.Google&&Program.Targets.SequenceEqual(ProfileCatalog.BuiltIn.GeminiTargets)&&Program.Hosts.Length==2,"services: Gemini alone is just the Gemini hosts");
+      form.SetScopeForTest(MainForm.BridgeScope.Google);
+      Check(!Program.Core&&!Program.Gemini&&Program.Google&&Program.Targets.SequenceEqual(ProfileCatalog.BuiltIn.GoogleTargets)&&Program.Hosts.Length>0&&Program.Hosts.All(h=>!ProfileCatalog.IsSuffix(h)),"services: the browser alone is the Google suffixes, checked on the catalog's own hosts");
+      form.SetScopeForTest(MainForm.BridgeScope.CoreGoogle);
+      Check(Program.Core&&!Program.Gemini&&Program.Google&&Program.Targets.Length==2+ProfileCatalog.BuiltIn.GoogleTargets.Length,"services: Antigravity with the browser, without Gemini, is possible");
+      form.SetScopeForTest(MainForm.BridgeScope.Core);Check(!seg.ClickForTest(0)&&Program.Core&&seg.OnCount==1,"services: the last service that is on cannot be switched off");
+      // the real paint path (the window's own double-buffered WM_PAINT, not a snapshot), repeated
+      for(int rep=0;rep<30;rep++){form.SetScopeForTest((MainForm.BridgeScope)(1+rep%7));seg.Invalidate();seg.Update();seg.Refresh();}
       form.SmokeState("active");for(int rep=0;rep<10;rep++){form.ProfileControl.Invalidate();form.ProfileControl.Update();form.NavControl.Invalidate();form.NavControl.Update();}
-      Check(seg.PaintFailures==0&&form.LanguageControl.PaintFailures==0,"levels: thirty real repaints of the levels and the language switch fail nothing (a failed paint would show the framework's red cross)");
+      Check(seg.PaintFailures==0&&form.LanguageControl.PaintFailures==0,"services: thirty real repaints of the services and the language switch fail nothing (a failed paint would show the framework's red cross)");
       // as in the live window: animations on, the real message loop pumping for a while, an unhandled exception in any paint would reach the thread's handler
       int threadExceptions=0;System.Threading.ThreadExceptionEventHandler onEx=(s,ex)=>threadExceptions++;Application.ThreadException+=onEx;bool motion0=Motion.Enabled;
       try{
        Motion.Enabled=true;
-       foreach(var lvl in new[]{MainForm.BridgeScope.Gemini,MainForm.BridgeScope.Google,MainForm.BridgeScope.Core,MainForm.BridgeScope.Google}){
+       foreach(var lvl in new[]{MainForm.BridgeScope.CoreGemini,MainForm.BridgeScope.All,MainForm.BridgeScope.Core,MainForm.BridgeScope.GeminiGoogle}){
         form.SetScopeForTest(lvl);var sw=System.Diagnostics.Stopwatch.StartNew();while(sw.ElapsedMilliseconds<450){Application.DoEvents();System.Threading.Thread.Sleep(10);}
        }
       } finally { Motion.Enabled=motion0; }
-      // and with real mouse messages through the window procedure (hover over each level, tip, click on Antigravity / + Gemini Desktop), as a person would
+      // and with real mouse messages through the window procedure (hover over each cell, tip, click on Antigravity / Gemini), as a user would
       try{
        form.SmokeState("idle");   // no bridge: a click only changes the next connect (with a bridge it would ask a question in a dialog)
        Motion.Enabled=true;
@@ -329,35 +342,31 @@ namespace AgDns {
        foreach(int seg3 in new[]{0,1,2,1,0,1,2,0}){
         int x=(int)(seg.Width*(seg3*2+1)/6f),y=seg.Height/2;send(x,y,0x0200);   // WM_MOUSEMOVE
         var sw2=System.Diagnostics.Stopwatch.StartNew();while(sw2.ElapsedMilliseconds<120){Application.DoEvents();System.Threading.Thread.Sleep(10);}
-        if(seg3<2){send(x,y,0x0201);send(x,y,0x0202);}   // WM_LBUTTONDOWN / UP: Antigravity and + Gemini Desktop only (the third level opens the question)
+        if(seg3<2){send(x,y,0x0201);send(x,y,0x0202);}   // WM_LBUTTONDOWN / UP: Antigravity and Gemini only (the browser opens the question)
         var sw3=System.Diagnostics.Stopwatch.StartNew();while(sw3.ElapsedMilliseconds<260){Application.DoEvents();System.Threading.Thread.Sleep(10);}
        }
        send(-5,-5,0x0200);Application.DoEvents();
       } finally { Motion.Enabled=motion0;Application.ThreadException-=onEx; }
-      Check(threadExceptions==0&&seg.PaintFailures==0,"levels: with animation on and the message loop running, hovering and clicking through the levels, the highlight slides without a single failed paint");
+      Check(threadExceptions==0&&seg.PaintFailures==0,"services: with animation on and the message loop running, hovering and clicking through the cells fails no paint");
       var lang=form.LanguageControl;
-      Check(!lang.Cumulative&&seg.Cumulative&&lang.PillRect(1).Left>lang.PillRect(0).Left+1,"levels: the language switch still moves a single pill, only the levels accumulate");
-      // the plus: drawn larger than the letters' own plus, on the middle line of the letters
-      form.SetScopeForTest(MainForm.BridgeScope.Gemini);
-      using(var bmp=new Bitmap(seg.Width,seg.Height)){
-       seg.DrawToBitmap(bmp,new Rectangle(0,0,seg.Width,seg.Height));
-       var cell=new Rectangle((int)(3*k+w+2*k),(int)(3*k),(int)(w-4*k),seg.Height-(int)(6*k));
-       var ink=Ink(bmp,cell,200);
-       var cols=ink.Select(p=>p.x).Distinct().OrderBy(x=>x).ToList();
-       int runEnd=cols[0];foreach(int x in cols){if(x-runEnd>1)break;runEnd=x;}
-       var plus=ink.Where(p=>p.x<=runEnd).ToList();var text=ink.Where(p=>p.x>runEnd).ToList();
-       int plusW=runEnd-cols[0]+1;double plusMid=(plus.Min(p=>p.y)+plus.Max(p=>p.y))/2.0,textMid=(text.Min(p=>p.y)+text.Max(p=>p.y))/2.0;
-       Check(plusW>=8*k-1&&Math.Abs(plusMid-textMid)<=.75*k&&Math.Abs(plus.Max(p=>p.y)-plus.Min(p=>p.y)+1-plusW)<=1,"levels: the plus is "+plusW+" px wide (a plain «+» of this font is 6), square, and its middle ("+plusMid+") sits on the middle of the letters ("+textMid+")");
+      Check(lang.PillRect(1).Left>lang.PillRect(0).Left+1,"services: the language switch still moves a single pill");
+      // All three service labels use one font and fit their cells in both languages at every supported density.
+      var clipped=new List<string>();
+      foreach(bool english in new[]{false,true})foreach(float dpi in new[]{96f,120f,144f,192f}){
+       foreach(string label in new[]{"Antigravity","Gemini",english?"Browser":"Браузер"})
+        if(TextWidth(label,Theme.Family(8.5f,true),8.5f,dpi)>((332-6)/3f-34)*dpi/96f)clipped.Add(label+"@"+dpi);
       }
-     } finally { Program.Gemini=g0;Program.Google=g1;form.Close(); }
+      Check(clipped.Count==0,"services: the service names fit their cells without ellipsis at 96/120/144/192 dpi in RU and EN"+(clipped.Count==0?"":" — "+string.Join("; ",clipped)));
+
+     } finally { Program.Core=c0;Program.Gemini=g0;Program.Google=g1;form.Close(); }
     }
     // the self-test and the render run work on defaults and never write the owner's settings file, whatever they click
-    string sfile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AntigravityDnsUnlocker","settings.json");
+    string sfile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),AppIdentity.StorageName,"settings.json");
     DateTime? stamp0=File.Exists(sfile)?File.GetLastWriteTimeUtc(sfile):(DateTime?)null;string text0=File.Exists(sfile)?File.ReadAllText(sfile):null;
     using(var form=new MainForm(true)) {
      form.Show();Application.DoEvents();
      var ps=(PillSelect)form.ProfileControl;ps.SelectedIndex=(ps.SelectedIndex+1)%ps.Items.Count;ps.SelectedIndex=0;
-     form.SelectTab(2);form.ClickBrowserRowForTest();Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserCancelForTest();
+     form.SelectTab(2);form.ClickBrowserChangeForTest();Pump(form.BrowserWork);form.SelectBrowserForTest("edge");Pump(form.BrowserWork);form.BrowserCancelForTest();
      form.Close();
     }
     DateTime? stamp1=File.Exists(sfile)?File.GetLastWriteTimeUtc(sfile):(DateTime?)null;string text1=File.Exists(sfile)?File.ReadAllText(sfile):null;
@@ -365,7 +374,7 @@ namespace AgDns {
     // the card: the selector sits on its row, the rows are even
     using(var form=new MainForm(true)) {
      form.Show();Application.DoEvents();
-     Check(form.ProfileBounds.Width==form.ScopeBounds.Width&&form.ProfileBounds.Left==form.ScopeBounds.Left&&form.ProfileBounds.Height==form.ScopeBounds.Height,"profile field: as wide, as high and as far left as the levels under it (no card around it)");
+     Check(form.ProfileBounds.Width==form.ScopeBounds.Width&&form.ProfileBounds.Left==form.ScopeBounds.Left&&form.ProfileBounds.Height>form.ScopeBounds.Height&&form.ProfileCardForTest,"profile card: aligns with services and contains the expanded metrics and freshness rows");
      // the main page: nothing overlaps nothing, and everything is inside the page, in every state
      var broken=new List<string>();
      foreach(string mode in new[]{"idle","checking","busy","active","active-unchecked","recovery","conflict","wmi","drift","switch","noprovider"}){
@@ -428,6 +437,10 @@ namespace AgDns {
         Check(cbRevoked&&cbGood&&cbErrors,"revocation: the validation callback keeps every ordinary policy error as a refusal and adds the refusal of a revoked certificate");
        } finally { CertRevocation.Checker=saved;CertRevocation.Now=savedNow;CertRevocation.Forget(); }
        var F=System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.Revoked;
+       var U=System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.RevocationStatusUnknown;
+       var O=System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.OfflineRevocation;
+       var P=System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.PartialChain;
+       Check(CertRevocation.Decide(new[]{F|O})==RevocationVerdict.Revoked&&CertRevocation.Decide(new[]{U|P})==RevocationVerdict.Unknown&&CertRevocation.Decide(new[]{O|P})==RevocationVerdict.Unknown&&CertRevocation.Decide(new[]{U|O|F|P})==RevocationVerdict.Revoked,"revocation: combined chain status flags retain revoked precedence and unknown/offline evidence");
        Check(CertRevocation.Decide(new[]{F})==RevocationVerdict.Revoked&&CertRevocation.Decide(new[]{System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.RevocationStatusUnknown})==RevocationVerdict.Unknown&&CertRevocation.Decide(new[]{System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.OfflineRevocation})==RevocationVerdict.Unknown&&CertRevocation.Decide(new[]{System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.RevocationStatusUnknown,F})==RevocationVerdict.Revoked&&CertRevocation.Decide(new[]{System.Security.Cryptography.X509Certificates.X509ChainStatusFlags.PartialChain})==RevocationVerdict.Good&&CertRevocation.Decide(new System.Security.Cryptography.X509Certificates.X509ChainStatusFlags[0])==RevocationVerdict.Good,"revocation: the chain statuses are read as: revoked refuses; unknown or offline does not decide; anything else is not this check's business");
        // the real lookup on a certificate with no revocation address: quick, and never "revoked"
        var sw2=System.Diagnostics.Stopwatch.StartNew();var live=CertRevocation.Live(c1);sw2.Stop();
@@ -464,7 +477,7 @@ namespace AgDns {
     Check(off.Count==0,"icons: every settings icon is centred on its tile (centre of ink within 1 px) and 11.5–15.5 units big at 100/125/150 %"+(off.Count==0?"":" — "+string.Join("; ",off)));
     using(var form=new MainForm(true)) {
      form.Show();Application.DoEvents();
-     Check(form.Toggles.Select(t=>t.Icon).Concat(new[]{form.LanguageIconForTest,form.CustomRow.Icon,form.BrowserRowIconForTest,form.InfoRows[0].Icon}).Distinct().Count()==8,"icons: every row of the settings and the patcher row has its own icon (eight different ones)");
+     Check(form.Toggles.Select(t=>t.Icon).Concat(new[]{form.LanguageIconForTest,form.CustomRow.Icon,form.BrowserRowIconForTest,form.InfoRows[0].Icon}).Distinct().Count()==9,"icons: every row of the settings and the patcher row has its own icon (nine different ones)");
      form.Close();
     }
    } finally { L.En=en0; }

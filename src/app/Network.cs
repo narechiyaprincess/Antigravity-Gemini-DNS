@@ -11,7 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 
-namespace AgDns {
+namespace AntigravityGeminiDns {
  public sealed class Reply {
   public string Code; public int Rcode; public string[] Addresses; public string[] Cnames;
   public long Milliseconds; public string Transport; public string Server; public string Host; public int Type;
@@ -83,6 +83,34 @@ namespace AgDns {
    catch(Exception){r=new Reply{Code="DNS_TIMEOUT_OR_UNREACHABLE",Addresses=new string[0],Cnames=new string[0]};}
    r.Milliseconds=sw.ElapsedMilliseconds;r.Transport=tcp?"TCP":"UDP";r.Server=server;r.Host=host;r.Type=type;return r;
   }
+  public static async Task<Reply> ProbeAsync(string host,int type,string server,bool tcp,int timeout,CancellationToken ct) {
+   var sw=Stopwatch.StartNew();int id=System.Security.Cryptography.RandomNumberGenerator.GetInt32(1,65536);byte[] q=Query(host,type,id);Reply r;
+   using(var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct)) {
+    deadline.CancelAfter(timeout);
+    try {
+     var ip=IPAddress.Parse(server);byte[] data;
+     if(tcp) {
+      using(var c=new TcpClient(ip.AddressFamily)) {
+       await c.ConnectAsync(ip,53,deadline.Token);
+       using(var stream=c.GetStream()) {
+        byte[] frame=new byte[q.Length+2];frame[0]=(byte)(q.Length>>8);frame[1]=(byte)q.Length;q.CopyTo(frame,2);
+        await stream.WriteAsync(frame,deadline.Token);
+        byte[] prefix=new byte[2];await stream.ReadExactlyAsync(prefix,deadline.Token);
+        int size=U16(prefix,0);if(size<12)throw new FormatException();data=new byte[size];await stream.ReadExactlyAsync(data,deadline.Token);
+       }
+      }
+     } else {
+      using(var c=new UdpClient(ip.AddressFamily)){c.Connect(ip,53);await c.SendAsync(q,deadline.Token);data=(await c.ReceiveAsync(deadline.Token)).Buffer;}
+     }
+     r=Parse(data,host,type,id);
+    }catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
+    catch(OperationCanceledException){r=new Reply{Code="DNS_TIMEOUT"};}
+    catch(FormatException){r=new Reply{Code="DNS_INVALID_RESPONSE"};}
+    catch(SocketException){r=new Reply{Code="DNS_UNREACHABLE"};}
+    catch(IOException){r=new Reply{Code="DNS_INVALID_RESPONSE"};}
+   }
+   r.Addresses=r.Addresses??Array.Empty<string>();r.Cnames=r.Cnames??Array.Empty<string>();r.Milliseconds=sw.ElapsedMilliseconds;r.Transport=tcp?"TCP":"UDP";r.Server=server;r.Host=host;r.Type=type;return r;
+  }
   // Cancellable variant over a caller-owned HttpClient whose ConnectCallback pins the provider IP (the port comes from the URI, so :8443 works).
   public static async Task<Reply> DohAsync(HttpClient client,string uri,string host,int type,int timeoutMs,CancellationToken ct) {
    int id=System.Security.Cryptography.RandomNumberGenerator.GetInt32(1,65536);byte[] q=Query(host,type,id);var sw=Stopwatch.StartNew();
@@ -104,14 +132,20 @@ namespace AgDns {
      }
     }
     catch(FormatException){r=new Reply{Code="DNS_INVALID_RESPONSE"};}
-    catch(HttpRequestException){r=new Reply{Code="DOH_TLS_FAILURE_OR_UNREACHABLE"};}
+    catch(HttpRequestException e){r=new Reply{Code=HttpFailure(e)};}
     catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
-    catch(OperationCanceledException){r=new Reply{Code="DNS_TIMEOUT_OR_UNREACHABLE"};}
+    catch(OperationCanceledException){r=new Reply{Code="DOH_TIMEOUT"};}
     catch(Exception){r=new Reply{Code="DNS_INVALID_RESPONSE"};}
    }
    r.Addresses=r.Addresses??new string[0];r.Cnames=r.Cnames??new string[0];
    r.Transport="DoH HTTP/2 (benchmark, pinned IP)";r.Host=host;r.Type=type;r.Milliseconds=sw.ElapsedMilliseconds;return r;
   }
+  internal static string HttpFailure(HttpRequestException e)=>e.HttpRequestError switch {
+   HttpRequestError.SecureConnectionError=>"DOH_TLS_FAILURE",
+   HttpRequestError.HttpProtocolError or HttpRequestError.VersionNegotiationError or HttpRequestError.InvalidResponse=>"DOH_PROTOCOL_FAILURE",
+   HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError=>"DOH_UNREACHABLE",
+   _=>"DOH_TRANSPORT_FAILURE"
+  };
   public static Reply Doh(string host,int type,string server,int timeout,string template=null) {
    int id=System.Security.Cryptography.RandomNumberGenerator.GetInt32(1,65536);byte[] q=Query(host,type,id);var sw=Stopwatch.StartNew();
    Reply r;

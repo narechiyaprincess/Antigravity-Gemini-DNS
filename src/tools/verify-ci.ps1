@@ -1,4 +1,4 @@
-# Non-interactive technical gate shared by CI and tag builds. No live DNS operations.
+# Non-interactive technical gate shared by CI and manual verification. No live DNS operations.
 param([string]$Dotnet='')
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -11,8 +11,8 @@ Push-Location $repo
 try {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $src 'app\Build.ps1') -Dotnet $dn 2>&1 | Tee-Object -FilePath (Join-Path $log 'build.txt')
     if($LASTEXITCODE -ne 0){throw 'Build failed'}
-    $exe=(Resolve-Path (Join-Path $src '.work\build\AntigravityDnsUnlocker.exe')).Path
-    $project=[xml](Get-Content -LiteralPath (Join-Path $src 'app\AntigravityDnsUnlocker.csproj') -Raw)
+    $exe=(Resolve-Path (Join-Path $src '.work\build\AntigravityGeminiDns.exe')).Path
+    $project=[xml](Get-Content -LiteralPath (Join-Path $src 'app\AntigravityGeminiDns.csproj') -Raw)
     $version=(& $exe --version | Out-String).Trim()
     if($LASTEXITCODE -ne 0 -or $version -ne [string]$project.Project.PropertyGroup.Version){throw 'EXE/project version mismatch'}
 
@@ -33,14 +33,14 @@ try {
     if($engineExit -ne 0 -or ($engineTest -join "`n") -notmatch '(?m)^ENGINE_OFFLINE_PASS \d+\s*$'){throw 'Offline engine tests failed or success marker missing'}
 
     # Tier 14 checks module-path hardening and packaging without UAC or fake-CIM assumptions.
-    # Current includes tier 6's non-elevated CIM seam; run the full wrapper locally instead.
+    # The All tier includes tier 6's non-elevated CIM seam; run the full wrapper locally instead.
     $savedExe=$env:AGDNS_EXE
     try {
         $env:AGDNS_EXE=$exe
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $src 'tests\run_offline_e2e_tests.ps1') -Tier 14 2>&1 | Tee-Object -FilePath (Join-Path $log 'e2e.txt')
         if($LASTEXITCODE -ne 0){throw 'Offline tier 14 failed'}
         $receipt=Get-Content -LiteralPath (Join-Path $src '.work\offline_e2e_receipt.json') -Raw | ConvertFrom-Json
-        if($receipt.HostUnchanged -ne $true -or $receipt.TotalTests -le 0 -or $receipt.PassCount -ne $receipt.TotalTests -or $receipt.DefectCount -ne 0 -or $receipt.FailOtherCount -ne 0){throw 'Offline receipt did not pass'}
+        if($receipt.Completed -ne $true -or $receipt.HostUnchanged -ne $true -or $receipt.TotalTests -le 0 -or $receipt.PassCount -ne $receipt.TotalTests -or $receipt.DefectCount -ne 0 -or $receipt.FailOtherCount -ne 0){throw 'Offline receipt did not pass'}
     } finally {
         $env:AGDNS_EXE=$savedExe
     }
