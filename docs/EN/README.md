@@ -1,7 +1,4 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../../assets/brand/hero-dark.png">
-  <img src="../../assets/brand/hero-light.png" alt="Antigravity-Gemini DNS">
-</picture>
+# Antigravity-Gemini DNS
 
 [Русский](../../README.md) · **English**
 
@@ -9,7 +6,7 @@ Antigravity-Gemini DNS is a Windows app that finds a working DNS/DoH profile and
 
 **[Download the latest release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest)** · Windows 11 x64 · portable EXE, no .NET install needed · [changelog](../../CHANGELOG.md)
 
-> The sources on `main` are version 1.1.0. Until its release is published, the download link still serves 1.0.0. If you are upgrading from 1.0.0, read [how to upgrade](#upgrading-from-100) first.
+> The sources on `main` are version 1.1.0. Until its release is published, the download link still serves 1.0.0. If you are upgrading from 1.0.0, read [how to upgrade](../RELEASE-NOTES-1.1.0-EN.md#upgrade-and-downgrade) first.
 
 <p align="center">
   <img src="../../assets/screenshots/main-en.png" width="380" alt="Main screen: bridge disconnected, profile dns.malw.link and the Antigravity service selected">
@@ -34,10 +31,6 @@ Antigravity-Gemini DNS is a Windows app that finds a working DNS/DoH profile and
 4. Check the service itself: a connected bridge does not mean that sign-in or model access will work.
 5. To undo the changes, use Disconnect or Restore. Closing the window or quitting from the tray does not restore DNS.
 
-### Upgrading from 1.0.0
-
-First disconnect the bridge with the old version, make sure restoration has finished and close it. Only then start 1.1.0; never run both versions at once. There is no automatic downgrade to 1.0.0: once 1.1.0 has written its journal in the new format (Schema 2), the old version cannot read it. Keep `state.json` and the 1.1.0 EXE for recovery, do not delete the journal and do not clear NRPT rules by hand. Details: [release notes](../RELEASE-NOTES-1.1.0-EN.md#upgrade-and-downgrade) and [compatibility](../COMPATIBILITY-IDENTIFIERS.md).
-
 ## How it works and whom you trust
 
 For the domains of the selected services, the app creates Windows NRPT rules that send their DNS queries to the chosen DoH provider. Such a provider may answer with the addresses of its own proxy, in which case part of those services' traffic passes through it. The provider is therefore a party you trust: it sees the selected services' DNS queries and may relay their traffic. DoH encrypts the DNS queries themselves, not all of your computer's traffic. TLS certificate checks remain enabled.
@@ -49,6 +42,12 @@ For the domains of the selected services, the app creates Windows NRPT rules tha
 - Built-in providers are trusted once for the whole catalog; a custom DoH provider needs its own consent. Trust can be revoked in Settings.
 
 Known limitations of the current version are listed in the [release notes](../RELEASE-NOTES-1.1.0-EN.md#limitations).
+
+## Antigravity from Russia
+
+The bridge clears the road to the servers, but Antigravity has a second lock: a region check. From Russia it usually stops there even with working DNS. That lock is handled by [Open Antigravity Patcher](https://sourceforge.net/projects/open-antigravity-patcher/) by avencores, a patch for Antigravity 2.0, the IDE and the CLI that needs neither a VPN nor a change of your Google account's region. The pairing is simple: the patcher takes care of Antigravity itself, this bridge takes care of the network.
+
+The patcher is a separate third-party project; we neither develop nor review it. Read its page before you run it.
 
 ## Help
 
