@@ -1,6 +1,6 @@
 # Antigravity-Gemini DNS 1.1.0
 
-Prepared on 2026-10-26; publication date is pending. GitHub publication follows repository acceptance. [Русский](RELEASE-NOTES-1.1.0.md).
+Release date: 2026-10-26. [Русский](RELEASE-NOTES-1.1.0.md).
 
 Compared with 1.0.0: independent service groups, direct-first connection, coordinated prepare/apply/verify/recover, Doctor and separate policy/provider/application status, stronger freshness and NRPT/DoH ownership checks, Schema 2 journal, preference import/export, protected-copy elevated startup option, refreshed profiles and UI/DPI polish. The benchmark network budget is 10 seconds instead of 30; cancellation and rendering add time. This is not a connection-duration promise.
 
