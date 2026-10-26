@@ -2,7 +2,9 @@
 
 **Русский** · [English](docs/EN/README.md)
 
-Antigravity-Gemini DNS — программа для Windows, которая подбирает рабочий DNS/DoH-профиль и включает его только для выбранных сервисов: Antigravity, Gemini и связанных сервисов Google в браузере. Остальная сеть компьютера продолжает работать как раньше.
+Antigravity-Gemini DNS — утилита для Windows, которая подбирает рабочий DNS/DoH-профиль и включает его только для выбранных вами сервисов: Antigravity, Gemini и связанных сервисов Google в браузере.
+
+Остальная сеть компьютера продолжает работать как раньше.
 
 **[Скачать последний выпуск](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest)** · Windows 11 x64 · portable EXE, установка .NET не нужна · [что нового](CHANGELOG.md)
 
