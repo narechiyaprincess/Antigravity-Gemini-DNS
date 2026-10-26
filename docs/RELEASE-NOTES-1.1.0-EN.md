@@ -10,7 +10,7 @@ Catalog 2026.10.26.1 offers `dns.malw.link` (default), `dns.comss.one`, `dns.bez
 
 ## Upgrade and downgrade
 
-Disconnect with the old version that created the bridge, confirm restoration, close it, then start 1.1.0. Do not run both versions together. Data identifiers remain compatible, but this does not authorize switching versions with an active bridge. Once 1.1.0 writes Schema 2, the old Schema 1 engine cannot read it. Disconnect with 1.1.0 before downgrading. Never delete `state.json` or clear NRPT/DoH manually. [Compatibility](COMPATIBILITY-IDENTIFIERS.md).
+Disconnect with the old version that created the bridge, confirm restoration, close it, then start 1.1.0. Do not run both versions together. Data identifiers remain compatible, but this does not authorize switching versions with an active bridge. Once 1.1.0 writes Schema 2, the old Schema 1 engine cannot read it, even with phase `Restored`. Before considering a downgrade, disconnect with 1.1.0 and confirm restoration. Disconnecting retains Schema 2: automatic downgrade to 1.0.0 is unsupported, and this version provides no reverse journal migration. Preserve `state.json`, its access permissions and the 1.1.0 EXE for recovery; returning to 1.0.0 requires a separately reviewed migration procedure. Never delete or edit the journal or clear NRPT/DoH manually. [Compatibility](COMPATIBILITY-IDENTIFIERS.md).
 
 ## Limitations
 

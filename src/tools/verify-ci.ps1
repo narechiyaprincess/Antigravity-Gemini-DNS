@@ -1,6 +1,8 @@
 # Non-interactive technical gate shared by CI and manual verification. No live DNS operations.
 param([string]$Dotnet='')
 $ErrorActionPreference='Stop'
+# The self-test uses and removes this fixture root before the E2E runner's guard.
+if(Test-Path -LiteralPath 'HKCU:\Software\AgDnsTest'){throw 'PREEXISTING_TEST_REGISTRY: preserve HKCU\Software\AgDnsTest before CI verification'}
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $src=Join-Path $repo 'src'
 $log=Join-Path $src '.work\logs\ci'

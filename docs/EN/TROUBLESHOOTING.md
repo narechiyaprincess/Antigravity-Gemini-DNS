@@ -8,7 +8,7 @@
 
 Check the requirements: Windows 11 x64, Windows PowerShell 5.1, and native DoH. Windows 10 compatibility is unverified. Use the EXE from an [official Release](https://github.com/narechiyaprincess/Antigravity-DNS/releases/latest) and compare its SHA-256 with the release data. No separate .NET runtime is needed.
 
-Connecting and restoring require UAC approval. If an operation fails, record the code from Logs or Details. `DOH_UNSUPPORTED_BY_OS` means the necessary native DoH commands are unavailable; see [Microsoft's requirements](https://learn.microsoft.com/en-us/windows-server/networking/dns/doh-client-support). Do not substitute manual adapter DNS changes for this check.
+Connecting and restoring require administrator rights: an ordinary launch requests UAC for the operation; separately enabled elevated startup uses its existing privileges without a new prompt. If an operation fails, record the code from Logs or Details. `DOH_UNSUPPORTED_BY_OS` means the necessary native DoH commands are unavailable; see [Microsoft's requirements](https://learn.microsoft.com/en-us/windows-server/networking/dns/doh-client-support). Do not substitute manual adapter DNS changes for this check.
 
 `WMI_NOT_RESPONDING` means the CIM/WMI preflight did not answer, so the app does not start a change. If an operation was already in progress and its outcome is unconfirmed, follow the recovery section below. Do not delete the journal to dismiss the message.
 
@@ -31,7 +31,7 @@ A passing DNS/TLS test does not verify account login, regional restrictions, or 
 
 ## Disconnecting and restoring
 
-Use Disconnect / Restore and approve UAC. Closing the window, exiting the tray, or deleting the EXE does not remove DNS rules. The app does not perform a blanket network reset.
+Use Disconnect / Restore and approve UAC if prompted. Closing the window, exiting the tray, or deleting the EXE does not remove DNS rules. The app does not perform a blanket network reset.
 
 Restoration uses the ownership journal. Shared entries or entries changed by other software can be retained; read the result. For `RESTORE_UNCONFIRMED`, open Details and the offered recovery instructions. They are generated from that operation's journal; do not use someone else's registry-key list. Follow the steps and reboot requirement if shown, then check restoration again in the app.
 
@@ -49,6 +49,6 @@ More information: [architecture, security, and diagnostic limits](TECHNICAL.md),
 
 ## Upgrade and network-context refusal
 
-Before upgrading from 1.0.0, disconnect with the old version, confirm restoration and close it; then start 1.1.0. Disconnect with 1.1.0 before downgrading because the old engine cannot read Schema 2. Never delete the journal.
+Before upgrading from 1.0.0, disconnect with the old version, confirm restoration and close it; then start 1.1.0. Before considering a downgrade, disconnect with 1.1.0 and confirm restoration. The restored journal remains Schema 2, which 1.0.0 rejects even with phase `Restored`. Automatic downgrade is unsupported; no reverse journal migration is provided. Preserve the journal, its access permissions and the 1.1.0 EXE for recovery. Returning to 1.0.0 requires a separately reviewed migration procedure; never delete or edit the journal.
 
 Run Doctor for diagnostics. Secondary-adapter changes may conservatively refuse an operation (known P2). Wait for stable network state and retry. [v1.1.0 limits](../RELEASE-NOTES-1.1.0-EN.md).
