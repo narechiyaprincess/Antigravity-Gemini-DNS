@@ -19,7 +19,7 @@
   <img src="assets/screenshots/main-ru.png" width="380" alt="Главный экран: мост отключён, выбран профиль dns.malw.link и сервис Antigravity">
   <img src="assets/screenshots/test-ru.png" width="380" alt="Вкладка «Замер»: список DNS-профилей с доступностью и задержками">
 </p>
-<p align="center"><sub>Окно версии 1.1.0: главный экран и вкладка «Замер». Значения замера получены в одной сети — у вас они будут другими.</sub></p>
+<p align="center"><sub>Окно версии 1.1.0: главный экран и вкладка «Замер». </sub></p>
 
 ## Что умеет
 
